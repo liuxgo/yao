@@ -516,10 +516,14 @@ func processXgen(process *process.Process) interface{} {
 		}
 
 		xgenLogin["entry"]["admin"] = admin.Layout.Entry
-		xgenLogin["admin"] = map[string]interface{}{
-			"captcha": "/api/__yao/login/admin/captcha?type=digit",
-			"login":   "/api/__yao/login/admin",
-			"layout":  layout,
+
+		// 支持验证码
+		if admin.Layout.Captcha != "" {
+			xgenLogin["admin"] = map[string]interface{}{
+				"captcha": "/api/__yao/login/admin/captcha?type=digit",
+				"login":   "/api/__yao/login/admin",
+				"layout":  layout,
+			}
 		}
 
 		if admin.ThirdPartyLogin != nil && len(admin.ThirdPartyLogin) > 0 {
@@ -552,10 +556,14 @@ func processXgen(process *process.Process) interface{} {
 			layout = new
 		}
 		xgenLogin["entry"]["user"] = user.Layout.Entry
-		xgenLogin["user"] = map[string]interface{}{
-			"captcha": "/api/__yao/login/user/captcha?type=digit",
-			"login":   "/api/__yao/login/user",
-			"layout":  layout,
+
+		// 支持验证码
+		if user.Layout.Captcha != "" {
+			xgenLogin["user"] = map[string]interface{}{
+				"captcha": "/api/__yao/login/user/captcha?type=digit",
+				"login":   "/api/__yao/login/user",
+				"layout":  layout,
+			}
 		}
 
 		if user.ThirdPartyLogin != nil && len(user.ThirdPartyLogin) > 0 {

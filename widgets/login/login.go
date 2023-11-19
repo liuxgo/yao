@@ -80,7 +80,7 @@ func exportAPI() error {
 
 		// login action
 		process := "yao.login.Admin"
-		args := []interface{}{":payload"}
+		args := []interface{}{dsl.ID, ":payload"}
 		if dsl.Action.Process != "" {
 			process = dsl.Action.Process
 			args = dsl.Action.Args
@@ -97,25 +97,27 @@ func exportAPI() error {
 		}
 		http.Paths = append(http.Paths, path)
 
-		// captcha
-		process = "utils.captcha.Make"
-		args = []interface{}{":query"}
-		if dsl.Layout.Captcha != "" {
-			process = dsl.Layout.Captcha
-		}
+		isCaptcha := dsl.Layout.Captcha != ""
+		if isCaptcha {
+			// captcha
+			process = "utils.captcha.Make"
+			args = []interface{}{":query"}
+			if dsl.Layout.Captcha != "" {
+				process = dsl.Layout.Captcha
+			}
 
-		path = api.Path{
-			Label:       fmt.Sprintf("%s captcha", dsl.ID),
-			Description: fmt.Sprintf("%s captcha", dsl.ID),
-			Guard:       "-",
-			Path:        fmt.Sprintf("/%s/captcha", dsl.ID),
-			Method:      "GET",
-			Process:     process,
-			In:          args,
-			Out:         api.Out{Status: 200, Type: "application/json"},
+			path = api.Path{
+				Label:       fmt.Sprintf("%s captcha", dsl.ID),
+				Description: fmt.Sprintf("%s captcha", dsl.ID),
+				Guard:       "-",
+				Path:        fmt.Sprintf("/%s/captcha", dsl.ID),
+				Method:      "GET",
+				Process:     process,
+				In:          args,
+				Out:         api.Out{Status: 200, Type: "application/json"},
+			}
+			http.Paths = append(http.Paths, path)
 		}
-		http.Paths = append(http.Paths, path)
-
 	}
 
 	// api source

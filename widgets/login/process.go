@@ -28,24 +28,28 @@ func exportProcess() {
 
 // processLoginAdmin yao.admin.login 用户登录
 func processLoginAdmin(process *process.Process) interface{} {
-	process.ValidateArgNums(1)
-	payload := process.ArgsMap(0).Dot()
+	process.ValidateArgNums(2)
+	user := process.ArgsString(0)
+	payload := process.ArgsMap(1).Dot()
 	log.With(log.F{"payload": payload}).Debug("processLoginAdmin")
 
-	id := any.Of(payload.Get("captcha.id")).CString()
-	value := any.Of(payload.Get("captcha.code")).CString()
-	if id == "" {
-		exception.New("请输入验证码ID", 400).Ctx(maps.Map{"id": id, "code": value}).Throw()
-	}
+	isCaptcha := Logins[user].Layout.Captcha != ""
+	if isCaptcha {
+		id := any.Of(payload.Get("captcha.id")).CString()
+		value := any.Of(payload.Get("captcha.code")).CString()
+		if id == "" {
+			exception.New("请输入验证码ID", 400).Ctx(maps.Map{"id": id, "code": value}).Throw()
+		}
 
-	if value == "" {
-		exception.New("请输入验证码", 400).Ctx(maps.Map{"id": id, "code": value}).Throw()
-	}
+		if value == "" {
+			exception.New("请输入验证码", 400).Ctx(maps.Map{"id": id, "code": value}).Throw()
+		}
 
-	if !helper.CaptchaValidate(id, value) {
-		log.With(log.F{"id": id, "code": value}).Debug("ProcessLogin")
-		exception.New("验证码不正确", 403).Ctx(maps.Map{"id": id, "code": value}).Throw()
-		return nil
+		if !helper.CaptchaValidate(id, value) {
+			log.With(log.F{"id": id, "code": value}).Debug("ProcessLogin")
+			exception.New("验证码不正确", 403).Ctx(maps.Map{"id": id, "code": value}).Throw()
+			return nil
+		}
 	}
 
 	sid := session.ID()
