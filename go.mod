@@ -27,6 +27,7 @@ require (
 )
 
 require (
+	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358 // indirect
 	github.com/PuerkitoBio/goquery v1.8.1 // indirect
 	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/bytedance/sonic v1.10.1 // indirect
@@ -34,6 +35,8 @@ require (
 	github.com/chenzhuoyu/iasm v0.9.0 // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/evanw/esbuild v0.19.3 // indirect
+	github.com/go-asn1-ber/asn1-ber v1.5.5 // indirect
+	github.com/go-ldap/ldap/v3 v3.4.6 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/google/go-github/v30 v30.1.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
