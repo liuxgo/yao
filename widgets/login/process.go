@@ -15,11 +15,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var loginTypes = map[string]string{
-	"email":  "email",
-	"mobile": "mobile",
-}
-
 // Export process
 
 func exportProcess() {
@@ -57,37 +52,28 @@ func processLoginAdmin(process *process.Process) interface{} {
 		sid = csid
 	}
 
-	email := any.Of(payload.Get("email")).CString()
-	mobile := any.Of(payload.Get("mobile")).CString()
+	account := any.Of(payload.Get("account")).CString()
 	password := any.Of(payload.Get("password")).CString()
-	if email != "" {
-		return auth("email", email, password, sid)
-	} else if mobile != "" {
-		return auth("mobile", mobile, password, sid)
-	}
-
-	exception.New("参数错误", 400).Ctx(payload).Throw()
-	return nil
+	return auth(account, password, sid)
 }
 
-func auth(field string, value string, password string, sid string) maps.Map {
-	column, has := loginTypes[field]
-	if !has {
-		exception.New("登录方式(%s)尚未支持", 400, field).Throw()
-	}
+func auth(value string, password string, sid string) maps.Map {
 
+	// admin.user表三个唯一键username、email或者mobile均可登录
 	user := model.Select("admin.user")
 	rows, err := user.Get(model.QueryParam{
-		Select: []interface{}{"id", "password", "name", "type", "email", "mobile", "extra", "status"},
+		Select: []interface{}{"id", "password", "name", "type", "username", "email", "mobile", "extra", "status"},
 		Limit:  1,
 		Wheres: []model.QueryWhere{
-			{Column: column, Value: value},
+			{Column: "username", Value: value, Method: "orwhere"},
+			{Column: "email", Value: value, Method: "orwhere"},
+			{Column: "mobile", Value: value, Method: "orwhere"},
 			{Column: "status", Value: "enabled"},
 		},
 	})
 
 	if err != nil {
-		exception.New("数据库查询错误", 500, field).Throw()
+		exception.New("数据库查询错误", 500, "username", "email", "mobile").Throw()
 	}
 
 	if len(rows) == 0 {
