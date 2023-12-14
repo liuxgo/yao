@@ -3,6 +3,7 @@ package component
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	jsoniter "github.com/json-iterator/go"
@@ -115,8 +116,17 @@ func (cProp CloudPropsDSL) replaceMap(data map[string]interface{}, root string, 
 
 	// get keys
 	keys := []string{}
-	for key := range data {
-		keys = append(keys, key)
+	// 兼容切片
+	for key, value := range data {
+		switch val := value.(type) {
+		case []interface{}:
+			for i := range val {
+				keys = append(keys, fmt.Sprintf("%s[%d]", key, i))
+			}
+		default:
+			keys = append(keys, key)
+		}
+
 	}
 
 	for _, key := range keys {
@@ -132,7 +142,23 @@ func (cProp CloudPropsDSL) replaceMap(data map[string]interface{}, root string, 
 			continue
 		}
 
-		err := cProp.replaceAny(data[key], path, replace)
+		var err error
+		var index int64
+		// 判断key是否包含[?]
+		if strings.Contains(key, "[") {
+			keySlice := strings.FieldsFunc(key, func(r rune) bool {
+				return strings.ContainsRune("[]", r)
+			})
+			index, err = strconv.ParseInt(keySlice[1], 10, 64)
+			if err != nil {
+				return err
+			}
+			var d = data[keySlice[0]].([]interface{})
+			err = cProp.replaceAny(d[index], path, replace)
+		} else {
+			err = cProp.replaceAny(data[key], path, replace)
+		}
+
 		if err != nil {
 			return err
 		}

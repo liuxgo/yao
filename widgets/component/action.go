@@ -182,3 +182,34 @@ func (actions Actions) Filter(excludes map[string]bool) Actions {
 // 	}
 // 	return actions
 // }
+
+// CPropsMerge merge the Actions cloud props
+func (actions Actions) CPropsMerge(cloudProps map[string]CloudPropsDSL, getXpath func(index int, action ActionDSL) (xpath string), getDisabledXpath func(index int, action ActionDSL) (xpath string)) error {
+
+	for index, action := range actions {
+		if action.Props != nil {
+			xpath := getXpath(index, action)
+			cProps, err := action.Props.CloudProps(xpath, "Text")
+			if err != nil {
+				return err
+			}
+			mergeCProps(cloudProps, cProps)
+		}
+		if action.Disabled != nil && action.Disabled.Props != nil {
+			xpath := getDisabledXpath(index, action)
+			cProps, err := action.Disabled.Props.CloudProps(xpath, "Text")
+			if err != nil {
+				return err
+			}
+			mergeCProps(cloudProps, cProps)
+		}
+	}
+
+	return nil
+}
+
+func mergeCProps(cloudProps map[string]CloudPropsDSL, cProps map[string]CloudPropsDSL) {
+	for k, v := range cProps {
+		cloudProps[k] = v
+	}
+}

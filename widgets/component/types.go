@@ -58,6 +58,7 @@ type DisabledDSL struct {
 	Eq    interface{} `json:"eq,omitempty"`    // string | array<string>  Syntactic sugar eq -> value
 	Equal interface{} `json:"equal,omitempty"` // string | array<string>  Syntactic sugar equal -> value
 	Value interface{} `json:"value,omitempty"` // string | array<string>
+	Props PropsDSL    `json:"props,omitempty"`
 }
 
 type aliasActionNodes []ActionNode

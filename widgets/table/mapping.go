@@ -3,6 +3,7 @@ package table
 import (
 	"fmt"
 
+	"github.com/yaoapp/yao/widgets/component"
 	"github.com/yaoapp/yao/widgets/compute"
 	"github.com/yaoapp/yao/widgets/field"
 	"github.com/yaoapp/yao/widgets/mapping"
@@ -114,8 +115,28 @@ func (dsl *DSL) mapping() error {
 	dsl.mappingActions()
 
 	// Mapping cloud props
+	// Layout.Action.Disabled
+	err := dsl.Layout.Filter.Actions.CPropsMerge(dsl.CProps, func(index int, action component.ActionDSL) (xpath string) {
+		return fmt.Sprintf("filter.actions[%d].props", index)
+	}, func(index int, action component.ActionDSL) (xpath string) {
+		return fmt.Sprintf("filter.actions[%d].disabled.props", index)
+	})
+	if err != nil {
+		return err
+	}
+
+	// Layout.Table.Operation.Action.Disabled
+	err = dsl.Layout.Table.Operation.Actions.CPropsMerge(dsl.CProps, func(index int, action component.ActionDSL) (xpath string) {
+		return fmt.Sprintf("table.operation.actions[%d].props", index)
+	}, func(index int, action component.ActionDSL) (xpath string) {
+		return fmt.Sprintf("table.operation.actions[%d].disabled.props", index)
+	})
+	if err != nil {
+		return err
+	}
+
 	// Filters
-	err := dsl.Fields.Filter.CPropsMerge(dsl.CProps, func(name string, filter field.FilterDSL) (xpath string) {
+	err = dsl.Fields.Filter.CPropsMerge(dsl.CProps, func(name string, filter field.FilterDSL) (xpath string) {
 		return fmt.Sprintf("fields.filter.%s.edit.props", name)
 	})
 	if err != nil {
@@ -126,6 +147,7 @@ func (dsl *DSL) mapping() error {
 	return dsl.Fields.Table.CPropsMerge(dsl.CProps, func(name string, kind string, column field.ColumnDSL) (xpath string) {
 		return fmt.Sprintf("fields.table.%s.%s.props", name, kind)
 	})
+
 }
 
 // Actions get the table actions
