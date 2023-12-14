@@ -34,21 +34,22 @@ type aliasActionDSL ActionDSL
 
 // ActionDSL the component action DSL
 type ActionDSL struct {
-	ID           string            `json:"id,omitempty"`
-	Title        string            `json:"title,omitempty"`
-	Width        int               `json:"width,omitempty"`
-	Icon         string            `json:"icon,omitempty"`
-	Style        string            `json:"style,omitempty"`
-	Xpath        string            `json:"xpath,omitempty"`
-	DivideLine   bool              `json:"divideLine,omitempty"`
-	Hide         []string          `json:"hide,omitempty"` // Syntactic sugar ["add", "edit", "view"]
-	ShowWhenAdd  bool              `json:"showWhenAdd,omitempty"`
-	ShowWhenView bool              `json:"showWhenView,omitempty"`
-	HideWhenEdit bool              `json:"hideWhenEdit,omitempty"`
-	Props        PropsDSL          `json:"props,omitempty"`
-	Confirm      *ConfirmActionDSL `json:"confirm,omitempty"`
-	Action       ActionNodes       `json:"action,omitempty"`
-	Disabled     *DisabledDSL      `json:"disabled,omitempty"`
+	ID               string            `json:"id,omitempty"`
+	Title            string            `json:"title,omitempty"`
+	Width            int               `json:"width,omitempty"`
+	Icon             string            `json:"icon,omitempty"`
+	Style            string            `json:"style,omitempty"`
+	Xpath            string            `json:"xpath,omitempty"`
+	DivideLine       bool              `json:"divideLine,omitempty"`
+	Hide             []string          `json:"hide,omitempty"` // Syntactic sugar ["add", "edit", "view"]
+	ShowWhenAdd      bool              `json:"showWhenAdd,omitempty"`
+	ShowWhenView     bool              `json:"showWhenView,omitempty"`
+	HideWhenEdit     bool              `json:"hideWhenEdit,omitempty"`
+	Props            PropsDSL          `json:"props,omitempty"`
+	Confirm          *ConfirmActionDSL `json:"confirm,omitempty"`
+	Action           ActionNodes       `json:"action,omitempty"`
+	Disabled         *DisabledDSL      `json:"disabled,omitempty"`
+	HideWhenDisabled bool              `json:"hideWhenDisabled,omitempty"`
 }
 
 // DisabledDSL the action disabled
