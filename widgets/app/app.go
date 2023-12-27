@@ -524,6 +524,11 @@ func processXgen(process *process.Process) interface{} {
 				"login":   "/api/__yao/login/admin",
 				"layout":  layout,
 			}
+		} else {
+			xgenLogin["admin"] = map[string]interface{}{
+				"login":  "/api/__yao/login/admin",
+				"layout": layout,
+			}
 		}
 
 		if admin.ThirdPartyLogin != nil && len(admin.ThirdPartyLogin) > 0 {
@@ -563,6 +568,11 @@ func processXgen(process *process.Process) interface{} {
 				"captcha": "/api/__yao/login/user/captcha?type=digit",
 				"login":   "/api/__yao/login/user",
 				"layout":  layout,
+			}
+		} else {
+			xgenLogin["user"] = map[string]interface{}{
+				"login":  "/api/__yao/login/user",
+				"layout": layout,
 			}
 		}
 
