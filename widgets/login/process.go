@@ -176,6 +176,7 @@ func auth(account string, password string, sid string, isCompareHashPassword boo
 
 // ldap鉴权
 func ldapAuth(dsl LDAPLoginDSL, account, password string) (maps.MapStrAny, error) {
+	log.Info("[login] ldap auth account=%s", account)
 	// 连接ldap服务器
 	l, err := ldap.DialURL(dsl.URL)
 	if err != nil {
@@ -186,9 +187,7 @@ func ldapAuth(dsl LDAPLoginDSL, account, password string) (maps.MapStrAny, error
 	// 绑定ldap管理用户
 	err = l.Bind(dsl.BindUser, dsl.BindPassword)
 	if err != nil {
-		if err != nil {
-			exception.New("LDAP配置不正确", 500).Throw()
-		}
+		exception.New("LDAP配置不正确", 500).Throw()
 	}
 
 	// 1. 先对用户进行搜索，是否在ldap中
@@ -205,6 +204,7 @@ func ldapAuth(dsl LDAPLoginDSL, account, password string) (maps.MapStrAny, error
 	if err != nil {
 		exception.New("用户不存在(%s)", 404, account).Throw()
 	}
+	log.With(log.F{"sr": sr}).Info("%v", sr)
 
 	// 2. 进行二次bind，验证用户pass是否正确
 	userDN := sr.Entries[0].DN
@@ -212,6 +212,7 @@ func ldapAuth(dsl LDAPLoginDSL, account, password string) (maps.MapStrAny, error
 	if err != nil {
 		exception.New("登录密码错误 (%v)", 403, account).Throw()
 	}
+	log.Info("userDN=%s", userDN)
 
 	userAttributes := make(map[string]string)
 	userAttributes[dsl.Attributes.Username] = "username"
@@ -221,8 +222,12 @@ func ldapAuth(dsl LDAPLoginDSL, account, password string) (maps.MapStrAny, error
 
 	result := maps.MakeMapStrAny()
 	for _, attr := range sr.Entries[0].Attributes {
-		result[userAttributes[attr.Name]] = attr.Values[0]
+		if len(attr.Values) > 0 {
+			result[userAttributes[attr.Name]] = attr.Values[0]
+		}
 	}
+
+	log.Info("result=%v", result)
 
 	return result, nil
 }
@@ -231,14 +236,24 @@ func ldapAuth(dsl LDAPLoginDSL, account, password string) (maps.MapStrAny, error
 func saveLDAPUser(userInfo maps.MapStrAny) error {
 	user := model.Select("admin.user")
 
+	// 构造wheres条件，剔除空字符串
+	wheres := make([]model.QueryWhere, 0, 1)
+	for _, key := range []string{"username", "email", "mobile"} {
+		if v, ok := userInfo[key]; ok {
+			if fmt.Sprintf("%v", v) != "" {
+				wheres = append(wheres, model.QueryWhere{
+					Column: key,
+					Value:  v,
+					Method: "orwhere",
+				})
+			}
+		}
+	}
+
 	rows, err := user.Get(model.QueryParam{
 		Select: []interface{}{"id", "password", "name", "type", "username", "email", "mobile", "extra", "status"},
 		Limit:  1,
-		Wheres: []model.QueryWhere{
-			{Column: "username", Value: userInfo["username"], Method: "orwhere"},
-			{Column: "email", Value: userInfo["email"], Method: "orwhere"},
-			{Column: "mobile", Value: userInfo["mobile"], Method: "orwhere"},
-		},
+		Wheres: wheres,
 	})
 
 	if err != nil {
