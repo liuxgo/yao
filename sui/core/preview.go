@@ -5,17 +5,31 @@ import (
 )
 
 // PreviewRender render HTML for the preview
-func (page *Page) PreviewRender(request *Request) (string, error) {
+func (page *Page) PreviewRender(referer string) (string, error) {
+
+	// get the page config
+	page.GetConfig()
+
+	// Render the page
+	request := NewRequestMock(page.Config.Mock)
+	if referer != "" {
+		request.Referer = referer
+	}
 
 	warnings := []string{}
 	doc, warnings, err := page.Build(&BuildOption{
-		SSR:       true,
-		AssetRoot: request.AssetRoot,
+		SSR:         true,
+		AssetRoot:   fmt.Sprintf("/api/__yao/sui/v1/%s/asset/%s/@assets", page.SuiID, page.TemplateID),
+		KeepPageTag: false,
 	})
 
-	data, _, err := page.Data(request)
-	if err != nil {
-		warnings = append(warnings, err.Error())
+	// Get the data
+	var data Data = nil
+	if page.Codes.DATA.Code != "" || page.GlobalData != nil {
+		data, err = page.Exec(request)
+		if err != nil {
+			warnings = append(warnings, err.Error())
+		}
 	}
 
 	// Add Frame Height
@@ -60,10 +74,18 @@ func (page *Page) PreviewRender(request *Request) (string, error) {
 		return "", err
 	}
 
-	html, err = page.Render(html, data, warnings)
+	// Parser and render
+	parser := NewTemplateParser(data, &ParserOption{Preview: true})
+	html, err = parser.Render(html)
 	if err != nil {
-		warnings = append(warnings, err.Error())
+		return "", err
 	}
 
-	return doc.Html()
+	// Warnings should be added after rendering
+	if len(parser.errors) > 0 {
+		for _, err := range parser.errors {
+			warnings = append(warnings, err.Error())
+		}
+	}
+	return html, nil
 }

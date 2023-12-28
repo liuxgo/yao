@@ -1,5 +1,10 @@
 package core
 
+import (
+	"net/url"
+	"regexp"
+)
+
 // DSL the struct for the DSL
 type DSL struct {
 	ID         string   `json:"-"`
@@ -20,14 +25,16 @@ type Setting struct {
 
 // Page is the struct for the page
 type Page struct {
-	Route      string      `json:"route"`
-	Name       string      `json:"name,omitempty"`
-	TemplateID string      `json:"-"`
-	SuiID      string      `json:"-"`
-	Config     *PageConfig `json:"-"`
-	Path       string      `json:"-"`
-	Codes      SourceCodes `json:"-"`
-	Document   []byte      `json:"-"`
+	Route      string            `json:"route"`
+	Name       string            `json:"name,omitempty"`
+	TemplateID string            `json:"-"`
+	SuiID      string            `json:"-"`
+	Config     *PageConfig       `json:"-"`
+	Path       string            `json:"-"`
+	Codes      SourceCodes       `json:"-"`
+	Document   []byte            `json:"-"`
+	GlobalData []byte            `json:"-"`
+	Attrs      map[string]string `json:"-"`
 }
 
 // PageTreeNode is the struct for the page tree node
@@ -81,6 +88,7 @@ type Template struct {
 	Screenshots []string       `json:"screenshots"`
 	Themes      []SelectOption `json:"themes"`
 	Document    []byte         `json:"-"`
+	GlobalData  []byte         `json:"-"`
 }
 
 // Theme is the struct for the theme
@@ -128,10 +136,15 @@ type MediaSearchResult struct {
 
 // BuildOption is the struct for the option option
 type BuildOption struct {
-	SSR       bool   `json:"ssr"`
-	CDN       bool   `json:"cdn"`
-	UpdateAll bool   `json:"update_all"`
-	AssetRoot string `json:"asset_root,omitempty"`
+	SSR             bool   `json:"ssr"`
+	CDN             bool   `json:"cdn"`
+	UpdateAll       bool   `json:"update_all"`
+	AssetRoot       string `json:"asset_root,omitempty"`
+	IgnoreAssetRoot bool   `json:"ignore_asset_root,omitempty"`
+	IgnoreDocument  bool   `json:"ignore_document,omitempty"`
+	WithWrapper     bool   `json:"with_wrapper,omitempty"`
+	KeepPageTag     bool   `json:"keep_page_tag,omitempty"`
+	Namespace       string `json:"namespace,omitempty"`
 }
 
 // Request is the struct for the request
@@ -140,35 +153,40 @@ type Request struct {
 	AssetRoot string                 `json:"asset_root,omitempty"`
 	Referer   string                 `json:"referer,omitempty"`
 	Payload   map[string]interface{} `json:"payload,omitempty"`
-	Query     map[string][]string    `json:"query,omitempty"`
+	Query     url.Values             `json:"query,omitempty"`
 	Params    map[string]string      `json:"params,omitempty"`
-	Headers   map[string][]string    `json:"headers,omitempty"`
+	Headers   url.Values             `json:"headers,omitempty"`
 	Body      interface{}            `json:"body,omitempty"`
+	URL       ReqeustURL             `json:"url,omitempty"`
+	Sid       string                 `json:"sid,omitempty"`
 	Theme     string                 `json:"theme,omitempty"`
 	Locale    string                 `json:"locale,omitempty"`
 }
 
 // RequestSource is the struct for the request
 type RequestSource struct {
-	UID        string           `json:"uid"`
-	User       string           `json:"user,omitempty"`
-	Page       *SourceData      `json:"page,omitempty"`
-	Style      *SourceData      `json:"style,omitempty"`
-	Script     *SourceData      `json:"script,omitempty"`
-	Data       *SourceData      `json:"data,omitempty"`
-	Board      *BoardSourceData `json:"board,omitempty"`
-	Mock       *PageMock        `json:"mock,omitempty"`
-	Setting    *PageSetting     `json:"setting,omitempty"`
-	NeedToSave struct {
-		Page     bool `json:"page,omitempty"`
-		Style    bool `json:"style,omitempty"`
-		Script   bool `json:"script,omitempty"`
-		Data     bool `json:"data,omitempty"`
-		Board    bool `json:"board,omitempty"`
-		Mock     bool `json:"mock,omitempty"`
-		Setting  bool `json:"setting,omitempty"`
-		Validate bool `json:"validate,omitempty"`
-	} `json:"needToSave,omitempty"`
+	UID        string                  `json:"uid"`
+	User       string                  `json:"user,omitempty"`
+	Page       *SourceData             `json:"page,omitempty"`
+	Style      *SourceData             `json:"style,omitempty"`
+	Script     *SourceData             `json:"script,omitempty"`
+	Data       *SourceData             `json:"data,omitempty"`
+	Board      *BoardSourceData        `json:"board,omitempty"`
+	Mock       *PageMock               `json:"mock,omitempty"`
+	Setting    *PageSetting            `json:"setting,omitempty"`
+	NeedToSave ReqeustSourceNeedToSave `json:"needToSave,omitempty"`
+}
+
+// ReqeustSourceNeedToSave is the struct for the request
+type ReqeustSourceNeedToSave struct {
+	Page     bool `json:"page,omitempty"`
+	Style    bool `json:"style,omitempty"`
+	Script   bool `json:"script,omitempty"`
+	Data     bool `json:"data,omitempty"`
+	Board    bool `json:"board,omitempty"`
+	Mock     bool `json:"mock,omitempty"`
+	Setting  bool `json:"setting,omitempty"`
+	Validate bool `json:"validate,omitempty"`
 }
 
 // ResponseEditorRender is the struct for the response
@@ -196,17 +214,31 @@ type BoardSourceData struct {
 
 // PageMock is the struct for the request
 type PageMock struct {
-	Method  string              `json:"method,omitempty"`
-	Params  map[string]string   `json:"params,omitempty"`
-	Query   map[string][]string `json:"query,omitempty"`
-	Headers map[string][]string `json:"headers,omitempty"`
-	Body    interface{}         `json:"body,omitempty"`
+	Method  string                 `json:"method,omitempty"`
+	Referer string                 `json:"referer,omitempty"`
+	Payload map[string]interface{} `json:"payload,omitempty"`
+	Query   url.Values             `json:"query,omitempty"`
+	Params  map[string]string      `json:"params,omitempty"`
+	Headers url.Values             `json:"headers,omitempty"`
+	Body    interface{}            `json:"body,omitempty"`
+	URL     ReqeustURL             `json:"url,omitempty"`
+	Sid     string                 `json:"sid,omitempty"`
+}
+
+// ReqeustURL is the struct for the request
+type ReqeustURL struct {
+	Host   string `json:"host,omitempty"`
+	Domain string `json:"domain,omitempty"`
+	Path   string `json:"path,omitempty"`
+	Scheme string `json:"scheme,omitempty"`
+	URL    string `json:"url,omitempty"`
 }
 
 // PageConfig is the struct for the page config
 type PageConfig struct {
 	PageSetting `json:",omitempty"`
-	Mock        *PageMock `json:"mock,omitempty"`
+	Mock        *PageMock           `json:"mock,omitempty"`
+	Rendered    *PageConfigRendered `json:"rendered,omitempty"`
 }
 
 // PageSetting is the struct for the page setting
@@ -214,6 +246,12 @@ type PageSetting struct {
 	Title       string   `json:"title,omitempty"`
 	Description string   `json:"description,omitempty"`
 	SEO         *PageSEO `json:"seo,omitempty"`
+}
+
+// PageConfigRendered is the struct for the page config rendered
+type PageConfigRendered struct {
+	Title string `json:"title,omitempty"`
+	Link  string `json:"link,omitempty"`
 }
 
 // PageSEO is the struct for the page seo
@@ -244,15 +282,24 @@ type Source struct {
 
 // Public is the struct for the static
 type Public struct {
-	Host  string `json:"host,omitempty"`
-	Root  string `json:"root,omitempty"`
-	Index string `json:"index,omitempty"`
+	Host    string `json:"host,omitempty"`
+	Root    string `json:"root,omitempty"`
+	Index   string `json:"index,omitempty"`
+	Matcher string `json:"matcher,omitempty"`
 }
 
 // Storage is the struct for the storage
 type Storage struct {
 	Driver string                 `json:"driver"`
 	Option map[string]interface{} `json:"option,omitempty"`
+}
+
+// Matcher the struct for the matcher
+type Matcher struct {
+	Regex  *regexp.Regexp `json:"regex,omitempty"`
+	Exact  string         `json:"exact,omitempty"`
+	Parent string         `json:"-"`
+	Ref    string         `json:"-"`
 }
 
 // DocumentDefault is the default document

@@ -3,10 +3,20 @@ package core
 import (
 	"io"
 	"net/url"
+	"regexp"
 )
 
 // SUIs the loaded SUI instances
 var SUIs = map[string]SUI{}
+
+// RouteMatchers the route matchers for the SUI instance
+var RouteMatchers = map[*regexp.Regexp][][]*Matcher{}
+
+// RouteExactMatchers the route exact matchers for the SUI instance
+var RouteExactMatchers = map[string][][]*Matcher{}
+
+// RouteRegexp the regexp for the route
+var RouteRegexp = regexp.MustCompile(`([a-z0-9A-Z_\-]+)`)
 
 // SUI is the interface for the SUI
 type SUI interface {
@@ -15,6 +25,10 @@ type SUI interface {
 	GetTemplate(name string) (ITemplate, error)
 	UploadTemplate(src string, dst string) (ITemplate, error)
 	WithSid(sid string)
+	GetSid() string
+	PublicRootMatcher() *Matcher
+	GetPublic() *Public
+	PublicRootWithSid(sid string) (string, error)
 }
 
 // ITemplate is the interface for the ITemplate
@@ -23,7 +37,7 @@ type ITemplate interface {
 	PageTree(route string) ([]*PageTreeNode, error)
 	Page(route string) (IPage, error)
 	PageExist(route string) bool
-	CreatePage(route string) (IPage, error)
+	CreateEmptyPage(route string, setting *PageSetting) (IPage, error)
 	RemovePage(route string) error
 	GetPageFromAsset(asset string) (IPage, error)
 
@@ -39,32 +53,38 @@ type ITemplate interface {
 	Locales() []SelectOption
 	Themes() []SelectOption
 
-	Asset(file string) (*Asset, error)
+	Asset(file string, width, height uint) (*Asset, error)
 	AssetUpload(reader io.Reader, name string) (string, error)
 
 	MediaSearch(query url.Values, page int, pageSize int) (MediaSearchResult, error)
 
 	Build(option *BuildOption) error
 	SyncAssets(option *BuildOption) error
+
+	GetRoot() string
 }
 
 // IPage is the interface for the page
 type IPage interface {
 	Load() error
 
+	SUI() (SUI, error)
+	Sid() (string, error)
+
 	Get() *Page
 	GetConfig() *PageConfig
+	SaveAs(route string, setting *PageSetting) (IPage, error)
 	Save(request *RequestSource) error
 	SaveTemp(request *RequestSource) error
 	Remove() error
 
-	EditorRender(request *Request) (*ResponseEditorRender, error)
+	EditorRender() (*ResponseEditorRender, error)
 	EditorPageSource() SourceData
 	EditorScriptSource() SourceData
 	EditorStyleSource() SourceData
 	EditorDataSource() SourceData
 
-	PreviewRender(request *Request) (string, error)
+	PreviewRender(referer string) (string, error)
 
 	AssetScript() (*Asset, error)
 	AssetStyle() (*Asset, error)

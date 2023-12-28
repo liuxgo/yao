@@ -121,7 +121,19 @@ var dsl = []byte(`
 			"path": "/:id/page/create/:template_id/*route",
 			"method": "POST",
 			"process": "sui.Page.Create",
-			"in": ["$param.id", "$param.template_id", "$param.route", ":context"],
+			"in": ["$param.id", "$param.template_id", "$param.route", ":context", ":payload"],
+			"out": { "status": 200, "type": "application/json" }
+		},{
+			"path": "/:id/page/duplicate/:template_id/*route",
+			"method": "POST",
+			"process": "sui.Page.Duplicate",
+			"in": ["$param.id", "$param.template_id", "$param.route", ":payload"],
+			"out": { "status": 200, "type": "application/json" }
+		},{
+			"path": "/:id/page/rename/:template_id/*route",
+			"method": "POST",
+			"process": "sui.Page.Rename",
+			"in": ["$param.id", "$param.template_id", "$param.route", ":payload"],
 			"out": { "status": 200, "type": "application/json" }
 		},{
 			"path": "/:id/page/exist/:template_id/*route",
@@ -168,7 +180,7 @@ var dsl = []byte(`
 			"method": "GET",
 			"guard": "-",
 			"process": "sui.Template.Asset",
-			"in": ["$param.id", "$param.template_id", "$param.path"],
+			"in": ["$param.id", "$param.template_id", "$param.path", "$query.w", "$query.h"],
 			"out": {
 				"status": 200,
 				"body": "?:content",
@@ -185,7 +197,7 @@ var dsl = []byte(`
 			"guard": "query-jwt",
 			"method": "GET",
 			"process": "sui.Page.Asset",
-			"in": ["$param.id", "$param.template_id", "$param.path"],
+			"in": ["$param.id", "$param.template_id", "$param.path", "$query.w", "$query.h"],
 			"out": {
 				"status": 200,
 				"body": "?:content",
@@ -206,7 +218,7 @@ var dsl = []byte(`
 			"guard": "query-jwt",
 			"method": "GET",
 			"process": "sui.Preview.Render",
-			"in": ["$param.id", "$param.template_id", "$param.route", "$header.Referer", "$query.r", "$query.t"],
+			"in": ["$param.id", "$param.template_id", "$param.route", "$header.Referer"],
 			"out": {"status": 200, "type": "text/html; charset=utf-8"}
 		},
 

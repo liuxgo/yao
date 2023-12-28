@@ -251,9 +251,9 @@ func TestPageTree(t *testing.T) {
 	}
 
 	assert.IsType(t, []*core.PageTreeNode{}, res)
-	assert.Equal(t, 5, len(res.([]*core.PageTreeNode)))
+	assert.Equal(t, 6, len(res.([]*core.PageTreeNode)))
 	assert.Equal(t, "error", res.([]*core.PageTreeNode)[0].Name)
-	assert.Equal(t, "index", res.([]*core.PageTreeNode)[1].Name)
+	assert.Equal(t, "footer", res.([]*core.PageTreeNode)[1].Name)
 }
 
 func TestPageGet(t *testing.T) {
@@ -273,7 +273,7 @@ func TestPageGet(t *testing.T) {
 
 	pages := res.([]core.IPage)
 	assert.IsType(t, []core.IPage{}, pages)
-	assert.Equal(t, 8, len(pages))
+	assert.Equal(t, 9, len(pages))
 	for _, page := range pages {
 		assert.IsType(t, &local.Page{}, page)
 	}
@@ -314,9 +314,75 @@ func TestPageCreate(t *testing.T) {
 
 	load(t)
 	defer clean()
+	defer func() {
+		_, err := process.New("sui.page.remove", "demo", "tech-blue", "/unit-test").Exec()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
+	// test demo
+	p, err := process.Of("sui.page.create", "demo", "tech-blue", "/unit-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := p.Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Nil(t, res)
+}
+
+func TestPageRename(t *testing.T) {
+
+	load(t)
+	defer clean()
+	defer func() {
+		_, err := process.New("sui.page.remove", "demo", "tech-blue", "/unit-test-2").Exec()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
 
 	// test demo
 	p, err := process.Of("sui.page.create", "demo", "tech-blue", "/unit-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := p.Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Nil(t, res)
+
+	// rename
+	p, err = process.Of("sui.page.rename", "demo", "tech-blue", "/unit-test", map[string]interface{}{"route": "/unit-test-2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err = p.Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Nil(t, res)
+}
+
+func TestPageDuplicate(t *testing.T) {
+
+	load(t)
+	defer clean()
+	defer func() {
+		_, err := process.New("sui.page.remove", "demo", "tech-blue", "/unit-test").Exec()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	// test demo
+	p, err := process.Of("sui.page.duplicate", "demo", "tech-blue", "/page/[id]", map[string]interface{}{"title": "hello", "route": "/unit-test"})
 	if err != nil {
 		t.Fatal(err)
 	}
