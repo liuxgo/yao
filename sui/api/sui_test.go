@@ -26,13 +26,23 @@ func check(t *testing.T) {
 	for id := range core.SUIs {
 		ids[id] = true
 	}
-	assert.True(t, ids["azure"])
+	assert.False(t, ids["azure"])
 	assert.True(t, ids["demo"])
 	assert.True(t, ids["screen"])
 }
 
 func prepare(t *testing.T) {
 	test.Prepare(t, config.Conf, "YAO_TEST_BUILDER_APPLICATION")
+}
+
+func loadTestSui(t *testing.T) {
+	prepare(t)
+	defer clean()
+
+	_, err := loadFile("suis/demo.sui.yao", "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func clean() {

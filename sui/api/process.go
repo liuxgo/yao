@@ -35,14 +35,16 @@ func init() {
 		"component.get":  ComponentGet,
 		"component.find": ComponentFind,
 
-		"page.tree":     PageTree,
-		"page.get":      PageGet,
-		"page.save":     PageSave,
-		"page.savetemp": PageSaveTemp,
-		"page.create":   PageCreate,
-		"page.remove":   PageRemove,
-		"page.exist":    PageExist,
-		"page.asset":    PageAsset,
+		"page.tree":      PageTree,
+		"page.get":       PageGet,
+		"page.save":      PageSave,
+		"page.savetemp":  PageSaveTemp,
+		"page.create":    PageCreate,
+		"page.duplicate": PageDuplicate,
+		"page.rename":    PageRename,
+		"page.remove":    PageRemove,
+		"page.exist":     PageExist,
+		"page.asset":     PageAsset,
 
 		"editor.render":              EditorRender,
 		"editor.source":              EditorSource,
@@ -102,7 +104,9 @@ func TemplateAsset(process *process.Process) interface{} {
 		exception.New(err.Error(), 500).Throw()
 	}
 
-	asset, err := tmpl.Asset(process.ArgsString(2))
+	w := process.ArgsInt(3, 0)
+	h := process.ArgsInt(4, 0)
+	asset, err := tmpl.Asset(process.ArgsString(2), uint(w), uint(h))
 	if err != nil {
 		exception.New(err.Error(), 404).Throw()
 	}
@@ -255,7 +259,11 @@ func LocaleGet(process *process.Process) interface{} {
 		exception.New(err.Error(), 500).Throw()
 	}
 
-	return template.Locales()
+	locals := template.Locales()
+	if locals == nil {
+		return []core.SelectOption{}
+	}
+	return locals
 }
 
 // ThemeGet handle the find Template request
@@ -451,7 +459,7 @@ func PageSave(process *process.Process) interface{} {
 			exception.New(err.Error(), 500).Throw()
 		}
 	} else {
-		page, err = tmpl.CreatePage(route)
+		page, err = tmpl.CreateEmptyPage(route, nil)
 		if err != nil {
 			exception.New(err.Error(), 500).Throw()
 		}
@@ -493,7 +501,7 @@ func PageSaveTemp(process *process.Process) interface{} {
 			exception.New(err.Error(), 500).Throw()
 		}
 	} else {
-		page, err = tmpl.CreatePage(route)
+		page, err = tmpl.CreateEmptyPage(route, nil)
 		if err != nil {
 			exception.New(err.Error(), 500).Throw()
 		}
@@ -524,14 +532,25 @@ func PageCreate(process *process.Process) interface{} {
 	process.ValidateArgNums(3)
 	sui := get(process)
 	templateID := process.ArgsString(1)
-	route := route(process, 2)
+	route := process.ArgsString(2)
+	payload := process.ArgsMap(4, map[string]interface{}{})
 
 	tmpl, err := sui.GetTemplate(templateID)
 	if err != nil {
 		exception.New(err.Error(), 500).Throw()
 	}
 
-	page, err := tmpl.CreatePage(route)
+	// Get the route from payload
+	if v, ok := payload["route"].(string); ok {
+		route = v
+	}
+
+	title := route
+	if v, ok := payload["title"].(string); ok {
+		title = v
+	}
+	setting := &core.PageSetting{Title: title}
+	page, err := tmpl.CreateEmptyPage(route, setting)
 	if err != nil {
 		exception.New(err.Error(), 500).Throw()
 	}
@@ -542,7 +561,7 @@ func PageCreate(process *process.Process) interface{} {
 
 	source, err := getSource(process)
 	if err != nil {
-		exception.New(err.Error(), 500).Throw()
+		return nil
 	}
 
 	if source == nil {
@@ -553,6 +572,88 @@ func PageCreate(process *process.Process) interface{} {
 	if err != nil {
 		exception.New(err.Error(), 500).Throw()
 	}
+
+	Reload()
+	return nil
+}
+
+// PageRename handle the find Template request
+func PageRename(process *process.Process) interface{} {
+	process.ValidateArgNums(3)
+	sui := get(process)
+	templateID := process.ArgsString(1)
+	copyfrom := process.ArgsString(2)
+	payload := process.ArgsMap(3, map[string]interface{}{})
+
+	tmpl, err := sui.GetTemplate(templateID)
+	if err != nil {
+		exception.New(err.Error(), 500).Throw()
+	}
+
+	page, err := tmpl.Page(copyfrom)
+	if err != nil {
+		exception.New(err.Error(), 500).Throw()
+	}
+
+	// Get the route from payload
+	route, ok := payload["route"].(string)
+	if !ok {
+		exception.New("the route is required", 400).Throw()
+	}
+
+	// Rename
+	_, err = page.SaveAs(route, nil)
+	if err != nil {
+		exception.New(err.Error(), 500).Throw()
+	}
+
+	// delete the old page
+	err = tmpl.RemovePage(copyfrom)
+	if err != nil {
+		exception.New(err.Error(), 500).Throw()
+	}
+
+	Reload()
+	return nil
+}
+
+// PageDuplicate handle the find Template request
+func PageDuplicate(process *process.Process) interface{} {
+	process.ValidateArgNums(3)
+	sui := get(process)
+	templateID := process.ArgsString(1)
+	copyfrom := process.ArgsString(2)
+	payload := process.ArgsMap(3, map[string]interface{}{})
+
+	tmpl, err := sui.GetTemplate(templateID)
+	if err != nil {
+		exception.New(err.Error(), 500).Throw()
+	}
+
+	page, err := tmpl.Page(copyfrom)
+	if err != nil {
+		exception.New(err.Error(), 500).Throw()
+	}
+
+	// Get the route from payload
+	route, ok := payload["route"].(string)
+	if !ok {
+		exception.New("the route is required", 400).Throw()
+	}
+
+	title := route
+	if v, ok := payload["title"].(string); ok {
+		title = v
+	}
+
+	// Page Save as
+	setting := &core.PageSetting{Title: title}
+	_, err = page.SaveAs(route, setting)
+	if err != nil {
+		exception.New(err.Error(), 500).Throw()
+	}
+
+	Reload()
 	return nil
 }
 
@@ -568,10 +669,16 @@ func PageRemove(process *process.Process) interface{} {
 		exception.New(err.Error(), 500).Throw()
 	}
 
+	if !tmpl.PageExist(route) {
+		exception.New("page does not exists!", 400).Throw()
+	}
+
 	err = tmpl.RemovePage(route)
 	if err != nil {
 		exception.New(err.Error(), 500).Throw()
 	}
+
+	Reload()
 	return nil
 }
 
@@ -653,16 +760,7 @@ func EditorRender(process *process.Process) interface{} {
 		exception.New(err.Error(), 500).Throw()
 	}
 
-	// Request data
-	urlQuery := url.Values{}
-	if process.NumOfArgs() > 3 {
-		if v, ok := process.Args[3].(url.Values); ok {
-			urlQuery = v
-		}
-	}
-
-	req := &core.Request{Method: "GET", Query: urlQuery}
-	res, err := page.EditorRender(req)
+	res, err := page.EditorRender()
 	if err != nil {
 		exception.New(err.Error(), 500).Throw()
 	}
@@ -735,19 +833,9 @@ func PreviewRender(process *process.Process) interface{} {
 
 	process.ValidateArgNums(3)
 	sui := get(process)
-	id := process.ArgsString(0)
 	templateID := process.ArgsString(1)
 	route := route(process, 2)
 	referer := process.ArgsString(3, "")
-
-	// reqData := process.ArgsString(4)
-	// timestamp := process.Args[4].(*timestamp.Timestamp)
-
-	req := &core.Request{
-		Method:    "GET",
-		AssetRoot: fmt.Sprintf("/api/__yao/sui/v1/%s/asset/%s/@assets", id, templateID),
-		Referer:   referer,
-	}
 
 	tmpl, err := sui.GetTemplate(templateID)
 	if err != nil {
@@ -760,7 +848,7 @@ func PreviewRender(process *process.Process) interface{} {
 	}
 
 	// Request data
-	html, err := page.PreviewRender(req)
+	html, err := page.PreviewRender(referer)
 	if err != nil {
 		exception.New(err.Error(), 500).Throw()
 	}

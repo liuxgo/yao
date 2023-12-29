@@ -60,21 +60,21 @@ func TestTemplatePageTree(t *testing.T) {
 		t.Fatalf("Pages error: %v", err)
 	}
 
-	assert.Equal(t, 5, len(pages))
+	assert.Equal(t, 6, len(pages))
 	assert.Equal(t, "error", pages[0].Name)
 	assert.Equal(t, true, pages[0].IsDir)
 	assert.Equal(t, "error", pages[0].Children[0].Name)
 	assert.Equal(t, "/error", pages[0].Children[0].IPage.(*Page).Route)
 	assert.Equal(t, "error", pages[0].Children[0].IPage.(*Page).Name)
 
-	assert.Equal(t, "index", pages[1].Name)
+	assert.Equal(t, "index", pages[2].Name)
 	assert.Equal(t, true, pages[1].IsDir)
-	assert.Equal(t, "[invite]", pages[1].Children[0].Name)
-	assert.Equal(t, true, pages[1].Children[0].IsDir)
-	assert.Equal(t, "/index/[invite]", pages[1].Children[0].Children[0].IPage.(*Page).Route)
-	assert.Equal(t, "[invite]", pages[1].Children[0].Children[0].IPage.(*Page).Name)
-	assert.Equal(t, "/index", pages[1].Children[1].IPage.(*Page).Route)
-	assert.Equal(t, "index", pages[1].Children[1].IPage.(*Page).Name)
+	assert.Equal(t, "[invite]", pages[2].Children[0].Name)
+	assert.Equal(t, true, pages[2].Children[0].IsDir)
+	assert.Equal(t, "/index/[invite]", pages[2].Children[0].Children[0].IPage.(*Page).Route)
+	assert.Equal(t, "[invite]", pages[2].Children[0].Children[0].IPage.(*Page).Name)
+	assert.Equal(t, "/index", pages[2].Children[1].IPage.(*Page).Route)
+	assert.Equal(t, "index", pages[2].Children[1].IPage.(*Page).Name)
 
 }
 
@@ -474,7 +474,7 @@ func TestPageSave(t *testing.T) {
 	req := &core.RequestSource{UID: "19e09e7e-9e19-44c1-bbab-2a55c51c9df3"}
 	jsoniter.Unmarshal([]byte(payload), &req)
 
-	page, err := tmpl.CreatePage("/unit-test")
+	page, err := tmpl.CreateEmptyPage("/unit-test", nil)
 	if err != nil {
 		t.Fatalf("Page error: %v", err)
 	}
