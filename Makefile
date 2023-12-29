@@ -379,9 +379,66 @@ linux-release: clean
 	CGO_ENABLED=1 CGO_LDFLAGS="-static" go build -v -o dist/release/yao
 	chmod +x  dist/release/yao
 
+.PHONY: windows-release
+windows-release: clean
+	mkdir -p dist/release
+	# mkdir .tmp
+
+#	Building XGEN v0.9
+	# git clone https://github.com/YaoApp/xgen-deprecated.git .tmp/xgen/v0.9
+	# sed -ie "s/url('\/icon/url('\/xiang\/icon/g" .tmp/xgen/v0.9/public/icon/md_icon.css
+	# cd .tmp/xgen/v0.9 && yarn install && yarn build
+	# mkdir -p .tmp/xgen/v0.9
+	# cp -r xgen/v0.9 .tmp/xgen/v0.9/dist
+
+#	Building XGEN v1.0
+	export NODE_ENV=production
+	# git clone git@github.com:liuxgo/xgen.git .tmp/xgen/v1.0
+	rm -f .tmp/xgen/v1.0/pnpm-lock.yaml
+	echo "BASE=__yao_admin_root" > .tmp/xgen/v1.0/packages/xgen/.env
+	# cd .tmp/xgen/v1.0 && pnpm install --no-frozen-lockfile && pnpm run build
+
+#   Setup UI
+	# cd .tmp/xgen/v1.0/packages/setup  && pnpm install --no-frozen-lockfile && pnpm run build
+
+
+#	Checkout init
+	# git clone git@github.com:YaoApp/yao-init.git .tmp/yao-init
+	rm -rf .tmp/yao-init/.git
+	rm -rf .tmp/yao-init/.gitignore
+	rm -rf .tmp/yao-init/LICENSE
+	rm -rf .tmp/yao-init/README.md
+
+#   Yao Builder
+	mkdir -p .tmp/data/builder
+	curl -o .tmp/yao-builder-latest.tar.gz https://release-sv.yaoapps.com/archives/yao-builder-latest.tar.gz
+	tar -zxvf .tmp/yao-builder-latest.tar.gz -C .tmp/data/builder
+	rm -rf .tmp/yao-builder-latest.tar.gz
+
+#	Packing
+	mkdir -p .tmp/data/xgen
+	cp -r ./ui .tmp/data/ui
+	cp -r ./yao .tmp/data/yao
+	# cp -r .tmp/xgen/v0.9/dist .tmp/data/xgen/v0.9
+	cp -r .tmp/xgen/v1.0/packages/setup/build .tmp/data/xgen/setup
+	cp -r .tmp/xgen/v1.0/packages/xgen/dist .tmp/data/xgen/v1.0
+	cp -r .tmp/yao-init .tmp/data/init
+	go-bindata -fs -pkg data -o data/bindata.go -prefix ".tmp/data/" .tmp/data/...
+	rm -rf .tmp/data
+	# rm -rf .tmp/xgen
+
+#   Making artifacts
+	mkdir -p dist
+	# CGO_ENABLED=1
+	# CGO_LDFLAGS="-static" 
+	GO_ENABLED=1 go build -ldflags '-extldflags -static' -v -o dist/release/yao.exe
+	# chmod +x  dist/release/yao
+	rm -rf $(GOPATH)/bin/yao.exe
+	cp -rf dist/release/yao.exe $(GOPATH)/bin/
+
 # make clean
 .PHONY: clean
 clean: 
 	rm -rf ./tmp
-	rm -rf .tmp
+	# rm -rf .tmp
 	rm -rf dist
