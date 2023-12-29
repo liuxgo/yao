@@ -202,7 +202,7 @@ func ldapAuth(dsl LDAPLoginDSL, account, password string) (maps.MapStrAny, error
 		nil,
 	)
 	sr, err := l.Search(searchRequest)
-	if err != nil {
+	if err != nil || len(sr.Entries) == 0 {
 		exception.New("用户不存在(%s)", 404, account).Throw()
 	}
 
