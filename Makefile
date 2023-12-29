@@ -118,7 +118,7 @@ bindata:
 	mkdir -p .tmp/data
 
 #	Checkout init
-	git clone https://github.com/YaoApp/yao-init.git .tmp/yao-init
+	git clone git@github.com:YaoApp/yao-init.git .tmp/yao-init
 	rm -rf .tmp/yao-init/.git
 	rm -rf .tmp/yao-init/.gitignore
 	rm -rf .tmp/yao-init/LICENSE
@@ -272,7 +272,7 @@ debug: clean
 .PHONY: release
 release: clean
 	mkdir -p dist/release
-	mkdir .tmp
+	# mkdir .tmp
 
 #	Building XGEN v0.9
 	mkdir -p .tmp/xgen/v0.9/dist
@@ -329,18 +329,18 @@ release: clean
 .PHONY: linux-release
 linux-release: clean
 	mkdir -p dist/release
-	mkdir .tmp
+	# mkdir .tmp
 
 #	Building XGEN v0.9
-	git clone https://github.com/YaoApp/xgen-deprecated.git .tmp/xgen/v0.9
-	sed -ie "s/url('\/icon/url('\/xiang\/icon/g" .tmp/xgen/v0.9/public/icon/md_icon.css
-	cd .tmp/xgen/v0.9 && yarn install && yarn build
-	mkdir -p .tmp/xgen/v0.9
-	cp -r xgen/v0.9 .tmp/xgen/v0.9/dist
+	# git clone https://github.com/YaoApp/xgen-deprecated.git .tmp/xgen/v0.9
+	# sed -ie "s/url('\/icon/url('\/xiang\/icon/g" .tmp/xgen/v0.9/public/icon/md_icon.css
+	# cd .tmp/xgen/v0.9 && yarn install && yarn build
+	# mkdir -p .tmp/xgen/v0.9
+	# cp -r xgen/v0.9 .tmp/xgen/v0.9/dist
 
 #	Building XGEN v1.0
 	export NODE_ENV=production
-	git clone https://github.com/YaoApp/xgen.git .tmp/xgen/v1.0
+	# git clone git@github.com:liuxgo/xgen.git .tmp/xgen/v1.0
 	rm -f .tmp/xgen/v1.0/pnpm-lock.yaml
 	echo "BASE=__yao_admin_root" > .tmp/xgen/v1.0/packages/xgen/.env
 	cd .tmp/xgen/v1.0 && pnpm install --no-frozen-lockfile && pnpm run build
@@ -350,7 +350,7 @@ linux-release: clean
 
 
 #	Checkout init
-	git clone https://github.com/YaoApp/yao-init.git .tmp/yao-init
+	# git clone https://github.com/YaoApp/yao-init.git .tmp/yao-init
 	rm -rf .tmp/yao-init/.git
 	rm -rf .tmp/yao-init/.gitignore
 	rm -rf .tmp/yao-init/LICENSE
@@ -366,13 +366,13 @@ linux-release: clean
 	mkdir -p .tmp/data/xgen
 	cp -r ./ui .tmp/data/ui
 	cp -r ./yao .tmp/data/yao
-	cp -r .tmp/xgen/v0.9/dist .tmp/data/xgen/v0.9
+	# cp -r .tmp/xgen/v0.9/dist .tmp/data/xgen/v0.9
 	cp -r .tmp/xgen/v1.0/packages/setup/build .tmp/data/xgen/setup
 	cp -r .tmp/xgen/v1.0/packages/xgen/dist .tmp/data/xgen/v1.0
 	cp -r .tmp/yao-init .tmp/data/init
 	go-bindata -fs -pkg data -o data/bindata.go -prefix ".tmp/data/" .tmp/data/...
 	rm -rf .tmp/data
-	rm -rf .tmp/xgen
+	# rm -rf .tmp/xgen
 
 #   Making artifacts
 	mkdir -p dist
