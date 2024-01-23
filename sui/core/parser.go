@@ -1,12 +1,12 @@
 package core
 
 import (
-	"bytes"
 	"fmt"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/yaoapp/kun/log"
 	"golang.org/x/net/html"
 )
 
@@ -32,6 +32,18 @@ type ParserOption struct {
 	Editor    bool `json:"editor,omitempty"`
 	Preview   bool `json:"preview,omitempty"`
 	PrintData bool `json:"print_data,omitempty"`
+	Request   bool `json:"request,omitempty"`
+}
+
+var keepWords = map[string]bool{
+	"s:if":        true,
+	"s:for":       true,
+	"s:for-item":  true,
+	"s:for-index": true,
+	"s:elif":      true,
+	"s:else":      true,
+	"s:set":       true,
+	"s:bind":      true,
 }
 
 // NewTemplateParser create a new template parser
@@ -57,8 +69,7 @@ func (parser *TemplateParser) Render(html string) (string, error) {
 		html = fmt.Sprintf(`<!DOCTYPE html><html lang="en">%s</html>`, html)
 	}
 
-	reader := bytes.NewReader([]byte(html))
-	doc, err := goquery.NewDocumentFromReader(reader)
+	doc, err := NewDocumentString(html)
 	if err != nil {
 		return "", err
 	}
@@ -97,6 +108,15 @@ func (parser *TemplateParser) Render(html string) (string, error) {
 	// For editor
 	if parser.option != nil && parser.option.Editor {
 		return doc.Find("body").Html()
+	}
+
+	// For Request
+	if parser.option != nil && (parser.option.Request || parser.option.Preview) {
+		// Remove the sui-hide attribute
+		doc.Find("[sui-hide]").Remove()
+
+		// Remove All comments
+		parser.tidy(doc.Selection)
 	}
 
 	// fmt.Println(doc.Html())
@@ -144,8 +164,36 @@ func (parser *TemplateParser) parseElementNode(sel *goquery.Selection) {
 		parser.forStatementNode(sel)
 	}
 
+	if _, exist := sel.Attr("s:set"); exist || sel.Get(0).Data == "s:set" {
+		parser.setStatementNode(sel)
+	}
+
 	// Parse the attributes
 	parser.parseElementAttrs(sel)
+}
+
+func (parser *TemplateParser) setStatementNode(sel *goquery.Selection) {
+
+	sel.SetAttr("parsed", "true")
+
+	name := sel.AttrOr("name", "")
+	if name == "" {
+		return
+	}
+
+	valueExp := sel.AttrOr("value", "")
+	if stmtRe.MatchString(valueExp) {
+		val, err := parser.data.Exec(valueExp)
+		if err != nil {
+			log.Warn("Set %s: %s", valueExp, err)
+			parser.data[name] = valueExp
+			return
+		}
+		parser.data[name] = val
+		return
+	}
+
+	parser.data[name] = valueExp
 }
 
 func (parser *TemplateParser) parseElementAttrs(sel *goquery.Selection) {
@@ -242,6 +290,13 @@ func (parser *TemplateParser) forStatementNode(sel *goquery.Selection) {
 
 		// Create a new node
 		new := sel.Clone()
+		parser.removeParsed(new)
+		parser.data[itemVarName] = item
+		parser.data[indexVarName] = idx
+
+		// parser attributes
+		parser.parseElementAttrs(new)
+		parser.parsed(new)
 
 		// Set the key
 		parser.sequence = parser.sequence + 1
@@ -250,8 +305,6 @@ func (parser *TemplateParser) forStatementNode(sel *goquery.Selection) {
 
 		// Show the node
 		parser.show(new)
-		parser.data[itemVarName] = item
-		parser.data[indexVarName] = idx
 
 		if parser.option.Editor {
 			parser.setSuiAttr(new, "generate", "true")
@@ -299,6 +352,9 @@ func (parser *TemplateParser) ifStatementNode(sel *goquery.Selection) {
 	}
 
 	if res == true {
+		parser.removeParsed(sel)
+		parser.parseElementAttrs(sel)
+		parser.parsed(sel)
 		parser.show(sel)
 		return
 	}
@@ -313,6 +369,9 @@ func (parser *TemplateParser) ifStatementNode(sel *goquery.Selection) {
 		}
 
 		if res == true {
+			parser.removeParsed(elifNode)
+			parser.parseElementAttrs(elifNode)
+			parser.parsed(elifNode)
 			parser.show(elifNode)
 			return
 		}
@@ -320,6 +379,9 @@ func (parser *TemplateParser) ifStatementNode(sel *goquery.Selection) {
 
 	// else
 	if elseNode != nil {
+		parser.removeParsed(elseNode)
+		parser.parseElementAttrs(elseNode)
+		parser.parsed(elseNode)
 		parser.show(elseNode)
 	}
 }
@@ -365,17 +427,19 @@ func (parser *TemplateParser) hide(sel *goquery.Selection) {
 		return
 	}
 
-	style := sel.AttrOr("style", "")
-	if strings.Contains(style, "display: none") {
-		return
-	}
+	sel.SetAttr("sui-hide", "true")
 
-	if style != "" {
-		style = fmt.Sprintf("%s; display: none", style)
-	} else {
-		style = "display: none"
-	}
-	sel.SetAttr("style", style)
+	// style := sel.AttrOr("style", "")
+	// if strings.Contains(style, "display: none") {
+	// 	return
+	// }
+
+	// if style != "" {
+	// 	style = fmt.Sprintf("%s; display: none", style)
+	// } else {
+	// 	style = "display: none"
+	// }
+	// sel.SetAttr("style", style)
 }
 
 func (parser *TemplateParser) show(sel *goquery.Selection) {
@@ -385,18 +449,46 @@ func (parser *TemplateParser) show(sel *goquery.Selection) {
 		return
 	}
 
-	style := sel.AttrOr("style", "")
-	if !strings.Contains(style, "display: none") {
-		return
-	}
+	sel.RemoveAttr("sui-hide")
 
-	style = strings.ReplaceAll(style, "display: none", "")
-	if style == "" {
-		sel.RemoveAttr("style")
-		return
-	}
+	// style := sel.AttrOr("style", "")
+	// if !strings.Contains(style, "display: none") {
+	// 	return
+	// }
 
-	sel.SetAttr("style", style)
+	// style = strings.ReplaceAll(style, "display: none", "")
+	// if style == "" {
+	// 	sel.RemoveAttr("style")
+	// 	return
+	// }
+
+	// sel.SetAttr("style", style)
+}
+
+func (parser *TemplateParser) tidy(selection *goquery.Selection) {
+	selection.Contents().Each(func(i int, s *goquery.Selection) {
+
+		if s.Nodes[0].Type == html.CommentNode {
+			s.Remove()
+			return
+		}
+
+		// Remove the s:key-* attributes
+		if s.Nodes[0].Type == html.ElementNode {
+			for _, attr := range s.Nodes[0].Attr {
+				if attr.Key == "parsed" || keepWords[attr.Key] || strings.HasPrefix(attr.Key, "s:key") || strings.HasPrefix(attr.Key, "s:bind") {
+					s.RemoveAttr(attr.Key)
+				}
+			}
+
+			if s.Nodes[0].Data == "s:set" {
+				s.Remove()
+				return
+			}
+		}
+
+		parser.tidy(s)
+	})
 }
 
 func (parser *TemplateParser) key(prefix string, sel *goquery.Selection) string {
@@ -412,6 +504,10 @@ func (parser *TemplateParser) setKey(prefix string, sel *goquery.Selection, key 
 
 func (parser *TemplateParser) parsed(sel *goquery.Selection) {
 	sel.SetAttr("parsed", "true")
+}
+
+func (parser *TemplateParser) removeParsed(sel *goquery.Selection) {
+	sel.RemoveAttr("parsed")
 }
 
 func (parser *TemplateParser) hasParsed(sel *goquery.Selection) bool {

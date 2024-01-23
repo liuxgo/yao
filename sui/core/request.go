@@ -7,12 +7,15 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/yaoapp/gou/process"
 	"github.com/yaoapp/kun/any"
+	"github.com/yaoapp/kun/log"
 )
 
 // Cache the cache
 type Cache struct {
 	Data   string
 	Global string
+	Config string
+	Guard  string
 	HTML   string
 }
 
@@ -48,23 +51,25 @@ func (r *Request) ExecString(data string) (Data, error) {
 }
 
 // Exec get the data
-func (r *Request) Exec(m Data) error {
-
+func (r *Request) Exec(m map[string]interface{}) error {
+	ignores := map[string]bool{}
 	for key, value := range m {
-
-		if strings.HasPrefix(key, "$") {
+		if strings.HasPrefix(key, "$") && !ignores[key] {
 			res, err := r.call(value)
 			if err != nil {
+				log.Error("[Request] Exec key:%s, value:%s, %s", key, value, err.Error())
 				return err
 			}
 			newKey := key[1:]
 			m[newKey] = res
+			ignores[newKey] = true
 			delete(m, key)
 			continue
 		}
 
 		res, err := r.execValue(value)
 		if err != nil {
+			log.Error("[Request] Exec key:%s, value:%s, %s", key, value, err.Error())
 			return err
 		}
 		m[key] = res
@@ -209,7 +214,11 @@ func (r *Request) call(p interface{}) (interface{}, error) {
 		process.WithSID(r.Sid)
 	}
 
-	return process.Exec()
+	v, err := process.Exec()
+	if err != nil {
+		log.Error("[Request] process %s %s", processName, err.Error())
+	}
+	return v, err
 }
 
 func (r *Request) parseArgs(args []interface{}) ([]interface{}, error) {
@@ -228,26 +237,33 @@ func (r *Request) parseArgs(args []interface{}) ([]interface{}, error) {
 		switch v := arg.(type) {
 
 		case string:
-			if strings.HasPrefix(v, "$") {
-				key := strings.TrimLeft(v, "$")
-				args[i] = key
-				if data.Has(key) {
-					v := data.Get(key)
-					args[i] = v
-					if strings.HasPrefix(key, "query.") || strings.HasPrefix(key, "header.") {
-						switch arg := v.(type) {
-						case []interface{}:
-							if len(arg) == 1 {
-								args[i] = arg[0]
-							}
-						case []string:
-							if len(arg) == 1 {
-								args[i] = arg[0]
-							}
+			if !strings.HasPrefix(v, "$") {
+				args[i] = v
+				break
+			}
+
+			key := strings.TrimLeft(v, "$")
+			args[i] = key
+			if data.Has(key) {
+				v := data.Get(key)
+				args[i] = v
+				if strings.HasPrefix(key, "query.") || strings.HasPrefix(key, "header.") {
+					switch arg := v.(type) {
+					case []interface{}:
+						if len(arg) == 1 {
+							args[i] = arg[0]
+						}
+					case []string:
+						if len(arg) == 1 {
+							args[i] = arg[0]
 						}
 					}
 				}
 			}
+			break
+
+		case int, int8, int16, int32, int64, float32, float64, bool, []string, []int, []int8, []int16, []int32, []int64, []float32, []float64, []bool:
+			args[i] = v
 			break
 
 		case []interface{}:
