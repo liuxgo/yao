@@ -12,17 +12,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"golang.org/x/crypto/md4"
 )
-
-func init() {
-	crypto.RegisterHash(crypto.MD4, md4.New)
-}
 
 // HashTypes string
 var HashTypes = map[string]crypto.Hash{
-	"MD4":         crypto.MD4,
+	"MD4":         crypto.MD5, // MD4 is not supported | replaced with MD5
 	"MD5":         crypto.MD5,
 	"SHA1":        crypto.SHA1,
 	"SHA224":      crypto.SHA224,
@@ -41,6 +35,12 @@ var HashTypes = map[string]crypto.Hash{
 	"BLAKE2b_256": crypto.BLAKE2b_256,
 	"BLAKE2b_384": crypto.BLAKE2b_384,
 	"BLAKE2b_512": crypto.BLAKE2b_512,
+}
+
+type hmacOption struct {
+	keyEncoding    string // base64 | hex
+	valueEncoding  string // base64 | hex
+	outputEncoding string // base64 | hex
 }
 
 // Hash string
@@ -68,6 +68,67 @@ func Hmac(hash crypto.Hash, value string, key string, encoding ...string) (strin
 	return fmt.Sprintf("%x", mac.Sum(nil)), nil
 }
 
+// HmacWith the Keyed-Hash Message Authentication Code (HMAC)
+func HmacWith(option *hmacOption, hash crypto.Hash, value string, key string) (string, error) {
+	var k []byte
+	var v []byte
+	var err error
+	if option == nil {
+		option = &hmacOption{}
+	}
+
+	switch option.keyEncoding {
+	case "base64":
+		k, err = base64.StdEncoding.DecodeString(key)
+		if err != nil {
+			return "", err
+		}
+		break
+
+	case "hex":
+		k, err = hex.DecodeString(key)
+		if err != nil {
+			return "", err
+		}
+		break
+
+	default:
+		k = []byte(key)
+	}
+
+	switch option.valueEncoding {
+	case "base64":
+		v, err = base64.StdEncoding.DecodeString(value)
+		if err != nil {
+			return "", err
+		}
+		break
+	case "hex":
+		v, err = hex.DecodeString(value)
+		if err != nil {
+			return "", err
+		}
+
+	default:
+		v = []byte(value)
+	}
+
+	mac := hmac.New(hash.New, k)
+	_, err = mac.Write(v)
+	if err != nil {
+		return "", err
+	}
+
+	switch option.outputEncoding {
+	case "base64":
+		return base64.StdEncoding.EncodeToString(mac.Sum(nil)), nil
+	case "hex":
+		return fmt.Sprintf("%x", mac.Sum(nil)), nil
+	default:
+		return fmt.Sprintf("%x", mac.Sum(nil)), nil
+	}
+}
+
 // RSA2Sign RSA2 Sign
 func RSA2Sign(prikey string, hash crypto.Hash, value string, encoding ...string) (string, error) {
 
@@ -82,7 +143,7 @@ func RSA2Sign(prikey string, hash crypto.Hash, value string, encoding ...string)
 		return "", err
 	}
 
-	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, h.Sum(nil))
+	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, hash, h.Sum(nil))
 	if err != nil {
 		return "", err
 	}
@@ -121,7 +182,7 @@ func RSA2Verify(pubkey string, hash crypto.Hash, value string, signatureString s
 		}
 	}
 
-	err = rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, h.Sum(nil), []byte(signature))
+	err = rsa.VerifyPKCS1v15(publicKey, hash, h.Sum(nil), []byte(signature))
 	return err == nil, nil
 }
 
@@ -153,8 +214,29 @@ func parsePrivateKey(privateKeyStr string) (*rsa.PrivateKey, error) {
 func parsePublicKey(publicKeyStr string) (*rsa.PublicKey, error) {
 
 	publicKeyStr = strings.TrimSpace(publicKeyStr)
-	if !strings.HasPrefix(publicKeyStr, "-----BEGIN RSA PUBLIC KEY-----") {
+	if !strings.HasPrefix(publicKeyStr, "-----BEGIN RSA PUBLIC KEY-----") && !strings.HasPrefix(publicKeyStr, "-----BEGIN CERTIFICATE-----") {
 		publicKeyStr = fmt.Sprintf("-----BEGIN RSA PUBLIC KEY-----\n%s\n-----END RSA PUBLIC KEY-----\n", publicKeyStr)
+	}
+
+	// if it is a certificate, get the public key from the certificate
+	if strings.HasPrefix(publicKeyStr, "-----BEGIN CERTIFICATE-----") {
+
+		block, _ := pem.Decode([]byte(publicKeyStr))
+		if block == nil {
+			return nil, fmt.Errorf("cannot decode PEM block")
+		}
+
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+
+		pub, ok := cert.PublicKey.(*rsa.PublicKey)
+		if !ok {
+			return nil, errors.New("public key error")
+		}
+
+		return pub, nil
 	}
 
 	block, _ := pem.Decode([]byte(publicKeyStr))
