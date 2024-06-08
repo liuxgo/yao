@@ -10,23 +10,27 @@ import (
 // Bind model / store / table / ...
 func (dsl *DSL) Bind() error {
 
-	if dsl.Action.Bind == nil {
-		return nil
-	}
-
-	if dsl.Action.Bind.Model != "" {
-		return dsl.bindModel()
-	}
-
-	if dsl.Action.Bind.Store != "" {
-		return dsl.bindStore()
-	}
-
-	if dsl.Action.Bind.Table != "" {
-		return dsl.bindTable()
-	}
+	// Support bind in future version
 
 	return nil
+
+	// if dsl.Action.Bind == nil {
+	// 	return nil
+	// }
+
+	// if dsl.Action.Bind.Model != "" {
+	// 	return dsl.bindModel()
+	// }
+
+	// if dsl.Action.Bind.Store != "" {
+	// 	return dsl.bindStore()
+	// }
+
+	// if dsl.Action.Bind.Table != "" {
+	// 	return dsl.bindTable()
+	// }
+
+	// return nil
 }
 
 func (dsl *DSL) bindModel() error {
@@ -48,7 +52,7 @@ func (dsl *DSL) bindTable() error {
 
 	// Load table
 	if _, has := table.Tables[id]; !has {
-		if err := table.LoadID(id, dsl.Root); err != nil {
+		if err := table.LoadID(id); err != nil {
 			return err
 		}
 	}

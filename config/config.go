@@ -21,7 +21,7 @@ import (
 var Conf Config
 
 // LogOutput 日志输出
-var LogOutput *lumberjack.Logger // 日志文件
+var LogOutput io.WriteCloser // 日志文件
 
 // DSLExtensions the dsl file Extensions
 var DSLExtensions = []string{"*.yao", "*.json", "*.jsonc"}
@@ -161,22 +161,12 @@ func OpenLog() {
 			return
 		}
 	}
-	// LogOutput, err = os.OpenFile(logfile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-	// if err != nil {
-	// 	log.With(log.F{"file": logfile}).Error(err.Error())
-	// 	return
-	// }
 	LogOutput = &lumberjack.Logger{
-		// 日志输出文件路径
-		Filename: logfile,
-		// 日志文件最大 size, 单位是 MB
-		MaxSize: 100, // megabytes
-		// 最大过期日志保留的个数
-		MaxBackups: 10,
-		// 保留过期文件的最大时间间隔,单位是天
-		MaxAge: 28, //days
-		// 是否需要压缩滚动日志, 使用的 gzip 压缩
-		Compress: true, // disabled by default
+		Filename:   logfile,
+		MaxSize:    Conf.LogMaxSize, // megabytes
+		MaxBackups: Conf.LogMaxBackups,
+		MaxAge:     Conf.LogMaxAage, //days
+		LocalTime:  Conf.LogLocalTime,
 	}
 
 	log.SetOutput(LogOutput)

@@ -12,13 +12,14 @@ import (
 // DSL the form DSL
 type DSL struct {
 	ID     string                 `json:"id,omitempty"`
-	Root   string                 `json:"-"`
 	Name   string                 `json:"name,omitempty"`
 	Action *ActionDSL             `json:"action"`
 	Layout *LayoutDSL             `json:"layout"`
 	Fields *FieldsDSL             `json:"fields"`
 	Config map[string]interface{} `json:"config,omitempty"`
 	CProps field.CloudProps       `json:"-"`
+	file   string                 `json:"-"`
+	source []byte                 `json:"-"`
 	compute.Computable
 	*mapping.Mapping
 }
@@ -88,9 +89,12 @@ type FrameDSL struct {
 
 // SectionDSL layout.form.sections[*]
 type SectionDSL struct {
-	Title   string   `json:"title,omitempty"`
-	Desc    string   `json:"desc,omitempty"`
-	Columns []Column `json:"columns,omitempty"`
+	Title   string      `json:"title,omitempty"`
+	Desc    string      `json:"desc,omitempty"`
+	Icon    interface{} `json:"icon,omitempty"`
+	Color   string      `json:"color,omitempty"`
+	Weight  interface{} `json:"weight,omitempty"`
+	Columns []Column    `json:"columns,omitempty"`
 }
 
 // Column table columns
