@@ -54,18 +54,24 @@ func (page *Page) GetConfig() *PageConfig {
 		page.Config.Mock = &PageMock{Method: "GET"}
 	}
 
+	page.Config.Root = page.Root
 	return page.Config
 }
 
 // ExportConfig export the config
 func (page *Page) ExportConfig() string {
 	if page.Config == nil {
-		return ""
+		return fmt.Sprintf(`{"cacheStore": "%s"}`, page.CacheStore)
 	}
 
 	config, err := jsoniter.MarshalToString(map[string]interface{}{
-		"title": page.Config.Title,
-		"guard": page.Config.Guard,
+		"title":      page.Config.Title,
+		"guard":      page.Config.Guard,
+		"cacheStore": page.CacheStore,
+		"cache":      page.Config.Cache,
+		"dataCache":  page.Config.DataCache,
+		"api":        page.Config.API,
+		"root":       page.Root,
 	})
 
 	if err != nil {

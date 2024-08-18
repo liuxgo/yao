@@ -3,6 +3,9 @@ package core
 import (
 	"net/url"
 	"regexp"
+
+	"github.com/PuerkitoBio/goquery"
+	"golang.org/x/net/html"
 )
 
 // DSL the struct for the DSL
@@ -12,6 +15,7 @@ type DSL struct {
 	Guard      string   `json:"guard,omitempty"`
 	Storage    *Storage `json:"storage,omitempty"`
 	Public     *Public  `json:"public,omitempty"`
+	CacheStore string   `json:"cache_store,omitempty"` // The cache store
 	Sid        string   `json:"-"`
 	publicRoot string   `json:"-"`
 }
@@ -25,16 +29,105 @@ type Setting struct {
 
 // Page is the struct for the page
 type Page struct {
-	Route      string            `json:"route"`
-	Name       string            `json:"name,omitempty"`
-	TemplateID string            `json:"-"`
-	SuiID      string            `json:"-"`
-	Config     *PageConfig       `json:"-"`
-	Path       string            `json:"-"`
-	Codes      SourceCodes       `json:"-"`
-	Document   []byte            `json:"-"`
-	GlobalData []byte            `json:"-"`
-	Attrs      map[string]string `json:"-"`
+	Route      string              `json:"route"`
+	Name       string              `json:"name,omitempty"`
+	CacheStore string              `json:"-"`
+	TemplateID string              `json:"-"`
+	SuiID      string              `json:"-"`
+	Config     *PageConfig         `json:"-"`
+	Path       string              `json:"-"`
+	Root       string              `json:"-"`
+	Codes      SourceCodes         `json:"-"`
+	Script     *Script             `json:"-"` // The backend script  name.backend.ts / name.backend.js
+	Document   []byte              `json:"-"`
+	GlobalData []byte              `json:"-"`
+	Attrs      map[string]string   `json:"-"`
+	Attributes []html.Attribute    `json:"-"`
+	namespace  string              `json:"-"`
+	transCtx   *TranslateContext   `json:"-"`
+	parent     *Page               `json:"-"`
+	props      map[string]PageProp `json:"-"`
+}
+
+// PageProp is the struct for the page prop
+type PageProp struct {
+	Key   string `json:"key"`
+	Val   string `json:"val"`
+	Exp   bool   `json:"exp"`
+	Trans string `json:"trans"`
+}
+
+// BuildContext is the struct for the build context
+type BuildContext struct {
+	components    map[string]string
+	jitComponents map[string]bool
+	sequence      int
+	doc           *goquery.Document
+	scripts       []ScriptNode
+	scriptUnique  map[string]bool
+	styles        []StyleNode
+	styleUnique   map[string]bool
+	global        *GlobalBuildContext
+	translations  []Translation
+	warnings      []string
+	visited       map[string]int // Keep a counter for each page
+	stack         []string       // Stack to manage build states
+}
+
+// PageImport import instance
+type PageImport struct {
+	is        string
+	selection *goquery.Selection
+	slots     map[string]*goquery.Selection
+}
+
+// TranslateContext is the struct for the translate context
+type TranslateContext struct {
+	sequence     int
+	translations []Translation
+}
+
+// ScriptNode is the struct for the script node
+type ScriptNode struct {
+	Source    string           `json:"source"`
+	Attrs     []html.Attribute `json:"attrs"`
+	Parent    string           `json:"parent"`
+	Namespace string           `json:"namespace"`
+	Component string           `json:"component"`
+}
+
+// StyleNode is the struct for the style node
+type StyleNode struct {
+	Source    string           `json:"source"`
+	Attrs     []html.Attribute `json:"attrs"`
+	Parent    string           `json:"parent"`
+	Namespace string           `json:"namespace"`
+	Component string           `json:"component"`
+}
+
+// GlobalBuildContext is the struct for the global build context
+type GlobalBuildContext struct {
+	jitComponents map[string]bool
+	tmpl          ITemplate
+}
+
+// Translation is the struct for the translation
+type Translation struct {
+	Key     string `json:"key,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Message string `json:"message,omitempty"`
+	Type    string `json:"type,omitempty"` // ENUM: 'text', 'html', 'attr', 'script'
+}
+
+// Locale is the struct for the locale
+type Locale struct {
+	Name           string            `json:"name,omitempty" yaml:"name,omitempty"`
+	Formatter      string            `json:"formatter,omitempty" yaml:"formatter,omitempty"`
+	Keys           map[string]string `json:"keys,omitempty" yaml:"keys,omitempty"`
+	Messages       map[string]string `json:"messages,omitempty" yaml:"messages,omitempty"`
+	ScriptMessages map[string]string `json:"script_messages,omitempty" yaml:"script_messages,omitempty"`
+	Direction      string            `json:"direction,omitempty" yaml:"direction,omitempty"`
+	Timezone       string            `json:"timezone,omitempty" yaml:"timezone,omitempty"`
 }
 
 // PageTreeNode is the struct for the page tree node
@@ -81,14 +174,40 @@ type LayoutItem struct {
 
 // Template is the struct for the template
 type Template struct {
-	Version     int            `json:"version"` // Yao Builder version
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	Descrption  string         `json:"description"`
-	Screenshots []string       `json:"screenshots"`
-	Themes      []SelectOption `json:"themes"`
-	Document    []byte         `json:"-"`
-	GlobalData  []byte         `json:"-"`
+	Version      int              `json:"version"` // Yao Builder version
+	ID           string           `json:"id"`
+	Name         string           `json:"name"`
+	Descrption   string           `json:"description"`
+	Screenshots  []string         `json:"screenshots"`
+	Themes       []SelectOption   `json:"themes"`
+	Locales      []SelectOption   `json:"locales"`
+	Document     []byte           `json:"-"`
+	GlobalData   []byte           `json:"-"`
+	Scripts      *TemplateScirpts `json:"scripts,omitempty"`
+	Translator   string           `json:"translator,omitempty"`
+	BuildScript  *Script          `json:"-"` // __build.backend.ts / __build.backend.js
+	GlobalScript *Script          `json:"-"` // __global.backend.ts / __global.backend.js
+}
+
+// TemplateScirpts is the struct for the template scripts
+type TemplateScirpts struct {
+	BeforeBuild   []*TemplateScript `json:"before:build,omitempty"`   // Run before build
+	AfterBuild    []*TemplateScript `json:"after:build,omitempty"`    // Run after build
+	BuildComplete []*TemplateScript `json:"build:complete,omitempty"` // Run build complete
+}
+
+// TemplateScript is the struct for the template script
+type TemplateScript struct {
+	Type    string `json:"type"`
+	Content string `json:"content"`
+}
+
+// TemplateScirptResult is the struct for the template script result
+type TemplateScirptResult struct {
+	Message string          `json:"message,omitempty"`
+	Error   error           `json:"error,omitempty"`
+	Pid     int             `json:"pid,omitempty"`
+	Script  *TemplateScript `json:"script,omitempty"`
 }
 
 // Theme is the struct for the theme
@@ -99,8 +218,9 @@ type Theme struct {
 
 // SelectOption is the struct for the select option
 type SelectOption struct {
-	Label string `json:"label"`
-	Value string `json:"value"`
+	Label   string `json:"label"`
+	Value   string `json:"value"`
+	Default bool   `json:"default"`
 }
 
 // Asset is the struct for the asset
@@ -139,13 +259,21 @@ type BuildOption struct {
 	SSR             bool                   `json:"ssr"`
 	CDN             bool                   `json:"cdn"`
 	UpdateAll       bool                   `json:"update_all"`
+	PublicRoot      string                 `json:"public_root,omitempty"`
 	AssetRoot       string                 `json:"asset_root,omitempty"`
 	IgnoreAssetRoot bool                   `json:"ignore_asset_root,omitempty"`
+	IgnoreLibSUI    bool                   `json:"ignore_lib_sui,omitempty"`
 	IgnoreDocument  bool                   `json:"ignore_document,omitempty"`
+	JitMode         bool                   `json:"jit_mode,omitempty"`
 	WithWrapper     bool                   `json:"with_wrapper,omitempty"`
 	KeepPageTag     bool                   `json:"keep_page_tag,omitempty"`
 	Namespace       string                 `json:"namespace,omitempty"`
 	Data            map[string]interface{} `json:"data,omitempty"`
+	ComponentName   string                 `json:"component_name,omitempty"`
+	ScriptMinify    bool                   `json:"scriptminify,omitempty"`
+	StyleMinify     bool                   `json:"styleminify,omitempty"`
+	ExecScripts     bool                   `json:"exec_scripts,omitempty"`
+	Locales         []string               `json:"locales,omitempty"`
 }
 
 // Request is the struct for the request
@@ -160,8 +288,9 @@ type Request struct {
 	Body      interface{}            `json:"body,omitempty"`
 	URL       ReqeustURL             `json:"url,omitempty"`
 	Sid       string                 `json:"sid,omitempty"`
-	Theme     string                 `json:"theme,omitempty"`
-	Locale    string                 `json:"locale,omitempty"`
+	Theme     any                    `json:"theme,omitempty"`
+	Locale    any                    `json:"locale,omitempty"`
+	Script    *Script                `json:"-"`
 }
 
 // RequestSource is the struct for the request
@@ -246,14 +375,26 @@ type PageConfig struct {
 type PageSetting struct {
 	Title       string   `json:"title,omitempty"`
 	Guard       string   `json:"guard,omitempty"`
+	CacheStore  string   `json:"cacheStore,omitempty"`
+	Cache       int      `json:"cache,omitempty"`
+	Root        string   `json:"root,omitempty"`
+	DataCache   int      `json:"dataCache,omitempty"`
 	Description string   `json:"description,omitempty"`
 	SEO         *PageSEO `json:"seo,omitempty"`
+	API         *PageAPI `json:"api,omitempty"`
 }
 
 // PageConfigRendered is the struct for the page config rendered
 type PageConfigRendered struct {
 	Title string `json:"title,omitempty"`
 	Link  string `json:"link,omitempty"`
+}
+
+// PageAPI is the struct for the page api
+type PageAPI struct {
+	Prefix       string            `json:"prefix,omitempty"`
+	DefaultGuard string            `json:"defaultGuard,omitempty"`
+	Guards       map[string]string `json:"guards,omitempty"`
 }
 
 // PageSEO is the struct for the page seo
@@ -307,21 +448,21 @@ type Matcher struct {
 // DocumentDefault is the default document
 var DocumentDefault = []byte(`
 <!DOCTYPE html>
-<html lang="{{ $REQ.locale || 'en' }}">
+<html locale="{{ $locale ?? 'en-us' }}" class="{{ $theme }}" >
   <head>
     <meta charset="UTF-8" />
-    <title>{{ $DATA.head.title || '' }}</title>
+    <title>{{ $global.title ?? 'Untitled' }}</title>
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, shrink-to-fit=no"
     />
     <meta
       name="description"
-      content="{{ $DATA.head.description || '' }}"
+      content="{{ $global.description ?? '' }}"
     />
     <meta
       name="keywords"
-      content="{{ $DATA.head.keywords || '' }}"
+      content="{{ $global.keywords ?? '' }}"
     />
     <meta name="author" content="Yao" />
     <meta name="website" content="https://yaoapps.com" />

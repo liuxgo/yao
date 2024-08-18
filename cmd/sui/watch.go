@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/fsnotify/fsnotify"
@@ -22,8 +23,6 @@ import (
 	"github.com/yaoapp/yao/sui/core"
 )
 
-var data string
-
 var watched sync.Map
 
 // WatchCmd command
@@ -33,7 +32,7 @@ var WatchCmd = &cobra.Command{
 	Long:  L("Auto-build when the template file changes"),
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, color.RedString(L("yao cui watch <sui> <template> [data]")))
+			fmt.Fprintln(os.Stderr, color.RedString(L("yao sui watch <sui> <template> [data]")))
 			return
 		}
 
@@ -97,12 +96,23 @@ var WatchCmd = &cobra.Command{
 					return
 				}
 
-				err = tmpl.Build(&core.BuildOption{SSR: true, AssetRoot: assetRoot})
+				// Timecost
+				start := time.Now()
+				warnings, err := tmpl.Build(&core.BuildOption{SSR: true, AssetRoot: assetRoot})
 				if err != nil {
 					fmt.Fprint(os.Stderr, color.RedString(fmt.Sprintf("Failed: %s\n", err.Error())))
 					return
 				}
-				fmt.Print(color.GreenString("Success\n"))
+
+				if len(warnings) > 0 {
+					fmt.Fprintln(os.Stderr, color.YellowString("\nWarnings:"))
+					for _, warning := range warnings {
+						fmt.Fprintln(os.Stderr, color.YellowString(warning))
+					}
+				}
+				end := time.Now()
+				timecost := end.Sub(start).Truncate(time.Millisecond)
+				fmt.Printf(color.GreenString("Success (%s)\n"), timecost.String())
 			}
 		}, watchDone)
 

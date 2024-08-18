@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -28,15 +29,15 @@ var Guards = map[string]func(c *Request) error{
 // JWT Bearer JWT
 func guardBearerJWT(r *Request) error {
 	if r.context == nil {
-		return fmt.Errorf("No permission")
+		return fmt.Errorf("Not authenticated")
 	}
 	c := r.context
 	tokenString := c.Request.Header.Get("Authorization")
 	tokenString = strings.TrimSpace(strings.TrimPrefix(tokenString, "Bearer "))
 	if tokenString == "" {
-		c.JSON(403, gin.H{"code": 403, "message": "No permission"})
+		c.JSON(401, gin.H{"code": 401, "message": "Not authenticated"})
 		c.Abort()
-		return fmt.Errorf("No permission")
+		return fmt.Errorf("Not authenticated")
 	}
 
 	claims := helper.JwtValidate(tokenString)
@@ -56,13 +57,13 @@ func guardCookieJWT(r *Request) error {
 	if err != nil {
 		// c.JSON(403, gin.H{"code": 403, "message": "No permission"})
 		// c.Abort()
-		return fmt.Errorf("Not Authorized")
+		return fmt.Errorf("Not authenticated")
 	}
 
 	if tokenString == "" {
 		// c.JSON(403, gin.H{"code": 403, "message": "No permission"})
 		// c.Abort()
-		return fmt.Errorf("Not Authorized")
+		return fmt.Errorf("Not authenticated")
 	}
 
 	claims := helper.JwtValidate(tokenString)
@@ -93,15 +94,15 @@ func guardCookieTrace(r *Request) error {
 // JWT Bearer JWT
 func guardQueryJWT(r *Request) error {
 	if r.context == nil {
-		return fmt.Errorf("No permission")
+		return fmt.Errorf("Not authenticated")
 	}
 	c := r.context
 
 	tokenString := c.Query("__tk")
 	if tokenString == "" {
-		c.JSON(403, gin.H{"code": 403, "message": "No permission"})
+		c.JSON(401, gin.H{"code": 401, "message": "Not authenticated"})
 		c.Abort()
-		return fmt.Errorf("No permission")
+		return fmt.Errorf("Not authenticated")
 	}
 
 	claims := helper.JwtValidate(tokenString)
@@ -157,7 +158,7 @@ func (r *Request) scriptGuardExec(c *gin.Context, name string, args []interface{
 
 	script, err := v8.Select(id)
 	if err != nil {
-		c.JSON(403, gin.H{"code": 403, "message": fmt.Sprintf("Guard: %s %s", name, err.Error())})
+		c.JSON(403, gin.H{"code": 403, "message": err.Error()})
 		c.Abort()
 		return err
 	}
@@ -394,7 +395,26 @@ func (r *Request) scriptGuardExec(c *gin.Context, name string, args []interface{
 
 	_, err = ctx.Call(method, args...)
 	if err != nil {
-		c.JSON(403, gin.H{"code": 403, "message": fmt.Sprintf("Guard: %s %s", name, err.Error())})
+
+		message := err.Error()
+		if strings.HasPrefix(message, "Exception|") {
+			parts := strings.Split(message, ": ")
+			if len(parts) > 1 {
+				codestr := strings.TrimPrefix(parts[0], "Exception|")
+				message := parts[1]
+				code := 403
+				if codestr != "" {
+					if v, err := strconv.Atoi(codestr); err == nil {
+						code = v
+					}
+				}
+				c.JSON(code, gin.H{"code": code, "message": message})
+				c.Abort()
+				return err
+			}
+		}
+
+		c.JSON(403, gin.H{"code": 403, "message": message})
 		c.Abort()
 		return err
 	}

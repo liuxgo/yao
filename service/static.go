@@ -18,9 +18,6 @@ var AppFileServer http.Handler
 // XGenFileServerV1 XGen v1.0
 var XGenFileServerV1 http.Handler = http.FileServer(data.XgenV1())
 
-// BuilderFileServer Builder ui
-var BuilderFileServer http.Handler = http.FileServer(data.Builder())
-
 // AdminRoot cache
 var AdminRoot = ""
 
@@ -38,7 +35,7 @@ type rewriteRule struct {
 func SetupStatic() error {
 	setupAdminRoot()
 	setupRewrite()
-	AppFileServer = http.FileServer(fs.Dir("public"))
+	AppFileServer = gzipHandler(http.FileServer(fs.Dir("public")))
 	return nil
 }
 

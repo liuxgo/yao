@@ -20,10 +20,15 @@ func init() {
 	process.RegisterGroup("sui", map[string]process.Handler{
 		"setting": Setting,
 
+		"render": Render, // do not use this in script or flow, this is an internal method. Use the template.render instead
+		"run":    Run,    // do not use this in script or flow, this is an internal method. Use the template.run instead
+
 		"template.get":         TemplateGet,
 		"template.find":        TemplateFind,
 		"template.asset":       TemplateAsset,
 		"template.assetupload": TemplateAssetUpload,
+		"template.render":      TemplateRender,
+		// "template.run":         TemplateRun,
 
 		"locale.get": LocaleGet,
 		"theme.get":  ThemeGet,
@@ -58,6 +63,9 @@ func init() {
 
 		"build.all":  BuildAll,
 		"build.page": BuildPage,
+
+		"trans.all":  TransAll,
+		"trans.page": TransPage,
 
 		"sync.assetfile": SyncAssetFile, // Will be deprecated or change in the future
 
@@ -963,11 +971,14 @@ func BuildAll(process *process.Process) interface{} {
 		exception.New(err.Error(), 500).Throw()
 	}
 
-	err = tmpl.Build(&core.BuildOption{SSR: ssr, AssetRoot: assetRoot, Data: data})
+	warnings, err := tmpl.Build(&core.BuildOption{SSR: ssr, AssetRoot: assetRoot, Data: data})
 	if err != nil {
 		exception.New(err.Error(), 500).Throw()
 	}
 
+	if warnings != nil && len(warnings) > 0 {
+		return warnings
+	}
 	return nil
 }
 
@@ -1004,9 +1015,95 @@ func BuildPage(process *process.Process) interface{} {
 	}
 
 	data := process.ArgsMap(5, map[string]interface{}{})
-	err = page.Build(&core.BuildOption{SSR: ssr, AssetRoot: assetRoot, Data: data})
+	warnings, err := page.Build(nil, &core.BuildOption{SSR: ssr, AssetRoot: assetRoot, Data: data})
 	if err != nil {
 		exception.New(err.Error(), 500).Throw()
+	}
+	if warnings != nil && len(warnings) > 0 {
+		return warnings
+	}
+
+	return nil
+}
+
+// TransAll handle the render page request
+func TransAll(process *process.Process) interface{} {
+
+	process.ValidateArgNums(3)
+	sui := get(process)
+	templateID := process.ArgsString(1)
+
+	option := process.ArgsMap(2, map[string]interface{}{})
+	ssr := true
+	if v, ok := option["ssr"].(bool); ok {
+		ssr = v
+	}
+
+	assetRoot := ""
+	if v, ok := option["asset_root"].(string); ok {
+		assetRoot = v
+	}
+
+	data := map[string]interface{}{}
+	if v, ok := option["data"].(map[string]interface{}); ok {
+		data = v
+	}
+
+	tmpl, err := sui.GetTemplate(templateID)
+	if err != nil {
+		exception.New(err.Error(), 500).Throw()
+	}
+
+	warnings, err := tmpl.Trans(&core.BuildOption{SSR: ssr, AssetRoot: assetRoot, Data: data})
+	if err != nil {
+		exception.New(err.Error(), 500).Throw()
+	}
+
+	if warnings != nil && len(warnings) > 0 {
+		return warnings
+	}
+	return nil
+}
+
+// TransPage handle the render page request
+func TransPage(process *process.Process) interface{} {
+	process.ValidateArgNums(4)
+	sui := get(process)
+	templateID := process.ArgsString(1)
+	route := route(process, 2)
+	option := process.ArgsMap(3, map[string]interface{}{})
+	ssr := true
+	if v, ok := option["ssr"].(bool); ok {
+		ssr = v
+	}
+
+	assetRoot := ""
+	if v, ok := option["asset_root"].(string); ok {
+		assetRoot = v
+	}
+
+	tmpl, err := sui.GetTemplate(templateID)
+	if err != nil {
+		exception.New(err.Error(), 500).Throw()
+	}
+
+	page, err := tmpl.Page(route)
+	if err != nil {
+		exception.New(err.Error(), 500).Throw()
+	}
+
+	err = page.Load()
+	if err != nil {
+		exception.New(err.Error(), 500).Throw()
+	}
+
+	data := process.ArgsMap(5, map[string]interface{}{})
+	warnings, err := page.Trans(nil, &core.BuildOption{SSR: ssr, AssetRoot: assetRoot, Data: data})
+	if err != nil {
+		exception.New(err.Error(), 500).Throw()
+	}
+	if warnings != nil && len(warnings) > 0 {
+		return warnings
 	}
 
 	return nil

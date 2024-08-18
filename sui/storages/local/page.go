@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/yaoapp/kun/log"
 	"github.com/yaoapp/yao/sui/core"
@@ -162,7 +163,7 @@ func (tmpl *Template) Page(route string) (core.IPage, error) {
 			return page, nil
 		}
 	}
-	return nil, fmt.Errorf("Page %s not found", route)
+	return nil, fmt.Errorf("%s not found", route)
 }
 
 // PageExist check if the page exist
@@ -266,6 +267,30 @@ func (page *Page) SaveAs(route string, setting *core.PageSetting) (core.IPage, e
 	}
 
 	return page.tmpl.Page(route)
+}
+
+// CreatePage create a new page by the source
+func (tmpl *Template) CreatePage(source string) core.IPage {
+	name := uuid.New().String()
+	route := "/" + uuid.New().String()
+	return &Page{
+		tmpl: tmpl,
+		Page: &core.Page{
+			Route:      route,
+			TemplateID: tmpl.ID,
+			SuiID:      tmpl.local.ID,
+			Path:       filepath.Join(tmpl.Root, route),
+			Name:       name,
+			Codes: core.SourceCodes{
+				HTML: core.Source{File: fmt.Sprintf("%s.html", name), Code: source},
+				CSS:  core.Source{File: fmt.Sprintf("%s.css", name)},
+				JS:   core.Source{File: fmt.Sprintf("%s.js", name)},
+				TS:   core.Source{File: fmt.Sprintf("%s.ts", name)},
+				LESS: core.Source{File: fmt.Sprintf("%s.less", name)},
+				CONF: core.Source{File: fmt.Sprintf("%s.config", name)},
+			},
+		},
+	}
 }
 
 // CreateEmptyPage create a new empty
@@ -445,11 +470,21 @@ func (page *Page) Load() error {
 		page.Codes.CONF.Code = string(confCode)
 	}
 
+	// Set the page CacheStore
+	page.CacheStore = page.tmpl.local.DSL.CacheStore
+
 	// Set the page document
 	page.Document = page.tmpl.Document
 
 	// Set the page global data
 	page.GlobalData = page.tmpl.GlobalData
+
+	// Load the backend script
+	err := page.loadBackendScript()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -658,7 +693,7 @@ func (page *Page) AssetScript() (*core.Asset, error) {
 		}, nil
 	}
 
-	return nil, fmt.Errorf("Page %s script not found", page.Route)
+	return nil, fmt.Errorf("%s script not found", page.Route)
 }
 
 // AssetStyle get the style
@@ -680,5 +715,5 @@ func (page *Page) AssetStyle() (*core.Asset, error) {
 			Content: cssCode,
 		}, nil
 	}
-	return nil, fmt.Errorf("Page %s style not found", page.Route)
+	return nil, fmt.Errorf("%s style not found", page.Route)
 }

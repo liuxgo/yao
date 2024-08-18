@@ -29,6 +29,7 @@ type SUI interface {
 	PublicRootMatcher() *Matcher
 	GetPublic() *Public
 	PublicRootWithSid(sid string) (string, error)
+	PublicRoot(data map[string]any) (string, error)
 }
 
 // ITemplate is the interface for the ITemplate
@@ -37,6 +38,7 @@ type ITemplate interface {
 	PageTree(route string) ([]*PageTreeNode, error)
 	Page(route string) (IPage, error)
 	PageExist(route string) bool
+	CreatePage(html string) IPage
 	CreateEmptyPage(route string, setting *PageSetting) (IPage, error)
 	RemovePage(route string) error
 	GetPageFromAsset(asset string) (IPage, error)
@@ -58,11 +60,15 @@ type ITemplate interface {
 
 	MediaSearch(query url.Values, page int, pageSize int) (MediaSearchResult, error)
 
-	Build(option *BuildOption) error
+	Build(option *BuildOption) ([]string, error)
 	SyncAssets(option *BuildOption) error
 	SyncAssetFile(file string, option *BuildOption) error
-
 	GetRoot() string
+
+	ExecBeforeBuildScripts() []TemplateScirptResult
+	ExecAfterBuildScripts() []TemplateScirptResult
+
+	Trans(option *BuildOption) ([]string, error)
 }
 
 // IPage is the interface for the page
@@ -90,7 +96,10 @@ type IPage interface {
 	AssetScript() (*Asset, error)
 	AssetStyle() (*Asset, error)
 
-	Build(option *BuildOption) error
+	Build(globalCtx *GlobalBuildContext, option *BuildOption) ([]string, error)
+	BuildAsComponent(globalCtx *GlobalBuildContext, option *BuildOption) ([]string, error)
+
+	Trans(globalCtx *GlobalBuildContext, option *BuildOption) ([]string, error)
 }
 
 // IBlock is the interface for the block

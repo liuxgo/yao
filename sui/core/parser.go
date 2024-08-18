@@ -2,6 +2,8 @@ package core
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -9,6 +11,9 @@ import (
 	"github.com/yaoapp/kun/log"
 	"golang.org/x/net/html"
 )
+
+// Load the jit components
+var components = map[string]string{}
 
 // TemplateParser parser for the template
 type TemplateParser struct {
@@ -18,6 +23,14 @@ type TemplateParser struct {
 	errors   []error                             // errors
 	replace  map[*goquery.Selection][]*html.Node // replace nodes
 	option   *ParserOption                       // parser option
+	locale   *Locale                             // locale
+	context  *ParserContext                      // parser context
+	scripts  []ScriptNode                        // scripts
+	styles   []StyleNode                         // styles
+}
+
+// ParserContext parser context for the template
+type ParserContext struct {
 }
 
 // Mapping mapping for the template
@@ -29,10 +42,18 @@ type Mapping struct {
 
 // ParserOption parser option
 type ParserOption struct {
-	Editor    bool `json:"editor,omitempty"`
-	Preview   bool `json:"preview,omitempty"`
-	PrintData bool `json:"print_data,omitempty"`
-	Request   bool `json:"request,omitempty"`
+	Component    bool              `json:"component,omitempty"`
+	Editor       bool              `json:"editor,omitempty"`
+	Preview      bool              `json:"preview,omitempty"`
+	Debug        bool              `json:"debug,omitempty"`
+	DisableCache bool              `json:"disableCache,omitempty"`
+	Route        string            `json:"route,omitempty"`
+	Theme        any               `json:"theme,omitempty"`
+	Locale       any               `json:"locale,omitempty"`
+	Root         string            `json:"root,omitempty"`
+	Imports      map[string]string `json:"imports,omitempty"`
+	Script       *Script           `json:"-"` // backend script
+	Request      *Request          `json:"request,omitempty"`
 }
 
 var keepWords = map[string]bool{
@@ -44,6 +65,28 @@ var keepWords = map[string]bool{
 	"s:else":      true,
 	"s:set":       true,
 	"s:bind":      true,
+}
+
+var allowUsePropAttrs = map[string]bool{
+	"s:if":       true,
+	"s:elif":     true,
+	"s:for":      true,
+	"s:event":    true,
+	"s:event-cn": true,
+	"s:render":   true,
+	"s:public":   true,
+	"s:assets":   true,
+}
+
+var keepAttrs = map[string]bool{
+	"s:ns":       true,
+	"s:cn":       true,
+	"s:ready":    true,
+	"s:event":    true,
+	"s:event-cn": true,
+	"s:render":   true,
+	"s:public":   true,
+	"s:assets":   true,
 }
 
 // NewTemplateParser create a new template parser
@@ -59,6 +102,8 @@ func NewTemplateParser(data Data, option *ParserOption) *TemplateParser {
 		errors:   []error{},
 		replace:  map[*goquery.Selection][]*html.Node{},
 		option:   option,
+		scripts:  []ScriptNode{},
+		styles:   []StyleNode{},
 	}
 }
 
@@ -66,7 +111,7 @@ func NewTemplateParser(data Data, option *ParserOption) *TemplateParser {
 func (parser *TemplateParser) Render(html string) (string, error) {
 
 	if !strings.Contains(html, "<html") {
-		html = fmt.Sprintf(`<!DOCTYPE html><html lang="en">%s</html>`, html)
+		html = fmt.Sprintf(`<!DOCTYPE html><html lang="en-us">%s</html>`, html)
 	}
 
 	doc, err := NewDocumentString(html)
@@ -74,41 +119,41 @@ func (parser *TemplateParser) Render(html string) (string, error) {
 		return "", err
 	}
 
-	root := doc.Selection.Find("html")
-	parser.parseNode(root.Nodes[0])
-
-	// Replace the nodes
-	for sel, nodes := range parser.replace {
-		sel.ReplaceWithNodes(nodes...)
-		delete(parser.replace, sel)
+	// Set the locale
+	parser.locale = parser.Locale()
+	err = parser.RenderSelection(doc.Selection)
+	if err != nil {
+		return "", err
 	}
 
-	// Print the data
-	jsPrintData := ""
-	if parser.option != nil && parser.option.PrintData {
-		jsPrintData = "console.log(__sui_data);\n"
+	// Append the head
+	head := doc.Find("head")
+	if head.Length() > 0 {
+
+		scriptMessages := map[string]string{}
+		if parser.locale != nil && parser.locale.ScriptMessages != nil {
+			scriptMessages = parser.locale.ScriptMessages
+		}
+
+		data, err := jsoniter.MarshalToString(scriptMessages)
+		if err != nil {
+			data = "{}"
+		}
+
+		head.AppendHtml(headInjectionScript(data))
+		parser.addScripts(head, parser.filterScripts("head", parser.scripts))
+		parser.addStyles(head, parser.styles)
 	}
 
 	// Append the data to the body
 	body := doc.Find("body")
-	if body.Length() > 0 {
+	if body.Length() > 0 && !parser.option.Component {
 		data, err := jsoniter.MarshalToString(parser.data)
 		if err != nil {
 			data, _ = jsoniter.MarshalToString(map[string]string{"error": err.Error()})
 		}
-		body.AppendHtml("<script>\n" +
-			"try { " +
-			`var __sui_data = ` + data + ";\n" +
-			"} catch (e) { console.log('init data error:', e); }\n" +
-
-			`document.addEventListener("DOMContentLoaded", function () {` + "\n" +
-			`	try {` + "\n" +
-			`		__sui_data_ready( __sui_data );` + "\n" +
-			`	} catch(e) {}` + "\n" +
-			`});` + "\n" + jsPrintData +
-
-			"</script>\n",
-		)
+		body.AppendHtml(bodyInjectionScript(data, parser.debug()))
+		parser.addScripts(body, parser.filterScripts("body", parser.scripts))
 	}
 
 	// For editor
@@ -117,17 +162,44 @@ func (parser *TemplateParser) Render(html string) (string, error) {
 	}
 
 	// For Request
-	if parser.option != nil && (parser.option.Request || parser.option.Preview) {
+	if parser.option != nil && (parser.option.Request != nil || parser.option.Preview) {
 		// Remove the sui-hide attribute
 		doc.Find("[sui-hide]").Remove()
-
-		// Remove All comments
-		parser.tidy(doc.Selection)
+		parser.Tidy(doc.Selection)
 	}
 
 	// fmt.Println(doc.Html())
 	// fmt.Println(parser.errors)
 	return doc.Html()
+}
+
+// RenderSelection parses and renders the HTML template
+func (parser *TemplateParser) RenderSelection(section *goquery.Selection) error {
+
+	if len(section.Nodes) == 0 {
+		return fmt.Errorf("No nodes found")
+	}
+
+	parser.parseNode(section.Nodes[0])
+	// Replace the nodes
+	for sel, nodes := range parser.replace {
+		sel.ReplaceWithNodes(nodes...)
+		delete(parser.replace, sel)
+	}
+
+	parser.Fmt(section)
+	return nil
+}
+
+// Fmt formats the HTML template
+func (parser *TemplateParser) Fmt(doc *goquery.Selection) {
+	if parser.locale != nil {
+		sels := doc.Find(`[s\:trans-fmt]`)
+		sels.Each(func(i int, sel *goquery.Selection) {
+			name := sel.AttrOr("s:trans-fmt", "")
+			sel.SetText(parser.locale.Fmt(name, sel.Text()))
+		})
+	}
 }
 
 // Parse  parses and renders the HTML template
@@ -143,10 +215,8 @@ func (parser *TemplateParser) parseNode(node *html.Node) {
 		}
 		parser.parseElementNode(sel)
 
-		// Skip children if the node is a loop node
-		if _, exist := sel.Attr("s:for"); exist {
-			skipChildren = true
-		}
+		// Skip children if the node is a loop node、element component or JIT component
+		skipChildren = parser.hasForStatement(sel) || parser.isElementComponent(sel) || parser.isJitComponent(sel)
 
 	case html.TextNode:
 		parser.parseTextNode(node)
@@ -162,20 +232,275 @@ func (parser *TemplateParser) parseNode(node *html.Node) {
 
 func (parser *TemplateParser) parseElementNode(sel *goquery.Selection) {
 
-	if _, exist := sel.Attr("s:if"); exist {
-		parser.ifStatementNode(sel)
-	}
+	parser.transElementNode(sel) // Translations
+
+	node := sel.Get(0)
 
 	if _, exist := sel.Attr("s:for"); exist {
 		parser.forStatementNode(sel)
 	}
 
-	if _, exist := sel.Attr("s:set"); exist || sel.Get(0).Data == "s:set" {
+	if _, exist := sel.Attr("s:if"); exist {
+		parser.ifStatementNode(sel)
+	}
+
+	if _, exist := sel.Attr("s:set"); exist || node.Data == "s:set" {
 		parser.setStatementNode(sel)
+	}
+
+	// if the element is a component
+	if parser.isElementComponent(sel) {
+		parser.parseElementComponent(sel)
+	}
+
+	// JIT Compile the element
+	if parser.isJitComponent(sel) {
+		parser.parseJitComponent(sel)
 	}
 
 	// Parse the attributes
 	parser.parseElementAttrs(sel)
+}
+
+func (parser *TemplateParser) parseElementComponent(sel *goquery.Selection) {
+
+	parser.parsed(sel)
+	com := sel.AttrOr("s:cn", "")
+	props := map[string]interface{}{}
+	for _, attr := range sel.Nodes[0].Attr {
+		if strings.HasPrefix(attr.Key, "prop:") {
+			key := ToCamelCase(strings.TrimPrefix(attr.Key, "prop:"))
+			if key == "" {
+				continue
+			}
+
+			val, replaces := parser.data.Replace(attr.Val)
+			if HasJSON(replaces) {
+				sel.SetAttr(fmt.Sprintf("json-attr-prop:%s", key), "true")
+			}
+
+			if _, exist := sel.Attr(fmt.Sprintf("json-attr-prop:%s", key)); exist {
+				props[key] = ValueJSON(val)
+				continue
+			}
+			props[key] = val
+		}
+	}
+
+	// load the component based on the route
+	var script *Script
+	var err error
+	if parser.option.Imports != nil {
+		if route, has := parser.option.Imports[com]; has {
+			file := filepath.Join(string(os.PathSeparator), "public", parser.option.Root, route)
+			script, err = LoadScript(file, parser.disableCache())
+			if err != nil {
+				parser.errors = append(parser.errors, err)
+				setError(sel, err)
+				return
+			}
+		}
+	}
+
+	compParser := parser.clone(script)
+	dataRaw := ""
+
+	// Call the BeforeRender Hook
+	if script != nil {
+		data, err := script.BeforeRender(parser.option.Request, props)
+		if err != nil {
+			parser.errors = append(parser.errors, err)
+			setError(sel, err)
+			return
+		}
+		if data != nil {
+			for k, v := range data {
+				compParser.data[k] = v
+			}
+		}
+		dataRaw, err = jsoniter.MarshalToString(data)
+		if err != nil {
+			dataRaw = fmt.Sprintf(`"%s"`, err.Error())
+		}
+	}
+
+	// Parse the component using the component parser
+	compParser.parseElementAttrs(sel, true)
+	if dataRaw != "" {
+		sel.SetAttr("json:__component_data", dataRaw)
+	}
+
+	err = compParser.RenderSelection(sel)
+	if err != nil {
+		parser.errors = append(parser.errors, err)
+		setError(sel, err)
+	}
+	parser.sequence = compParser.sequence + 1
+
+}
+
+func (parser *TemplateParser) clone(script *Script) *TemplateParser {
+	var new = *parser
+	new.data = Data{}
+	for k, v := range parser.data {
+		new.data[k] = v
+	}
+	new.option.Script = script
+	return &new
+}
+
+func (parser *TemplateParser) isElementComponent(sel *goquery.Selection) bool {
+	if comp, exist := sel.Attr("s:cn"); exist && comp != "" && sel.Nodes[0].Data != "script" {
+		return true
+	}
+	return false
+}
+
+func (parser *TemplateParser) transTextNode(node *html.Node) {
+
+	parentSel := goquery.NewDocumentFromNode(node.Parent).Selection
+	text := strings.TrimSpace(node.Data)
+	if text == "" {
+		return
+	}
+
+	// Translate the node
+	if key, exists := parentSel.Attr("s:trans-node"); exists {
+		text = parser.transNode(key, text)
+	}
+
+	// Escape the text
+	if _, exists := parentSel.Attr("s:trans-escape"); exists {
+		text = parser.escapeText(text)
+	}
+
+	// Translate the text
+	if v, exists := parentSel.Attr("s:trans-text"); exists {
+		keys := strings.Split(v, ",")
+		text = parser.transText(text, keys)
+	}
+
+	node.Data = strings.Replace(node.Data, strings.TrimSpace(node.Data), text, 1)
+}
+
+func (parser *TemplateParser) transElementNode(sel *goquery.Selection) {
+
+	for _, attr := range sel.Nodes[0].Attr {
+		if strings.HasPrefix(attr.Key, "s:trans-attr-") {
+			keys := strings.Split(attr.Val, ",")
+			name := strings.TrimPrefix(attr.Key, "s:trans-attr-")
+			value := sel.AttrOr(name, "")
+			if value == "" {
+				continue
+			}
+			newValue := parser.transText(value, keys)
+			sel.SetAttr(name, newValue)
+		}
+	}
+}
+
+// Escape the text
+func (parser *TemplateParser) escapeText(content string) string {
+	matches := dataTokens.FindAllStringSubmatch(content, -1)
+	newContent := content
+	for _, match := range matches {
+		text := strings.TrimSpace(match[1])
+		newContent = strings.Replace(newContent, text, parser.escape(text), 1)
+	}
+	return newContent
+}
+
+func (parser *TemplateParser) escape(value string) string {
+	if strings.HasPrefix(value, "':::") {
+		return "'::" + strings.TrimPrefix(value, "':::")
+	}
+
+	if strings.HasPrefix(value, "&#39;:::") {
+		return "&#39;::" + strings.TrimPrefix(value, "&#39;:::")
+	}
+
+	if strings.HasPrefix(value, "\":::") {
+		return "\"::" + strings.TrimPrefix(value, "\":::")
+	}
+
+	if strings.HasPrefix(value, "&#34;:::") {
+		return "&#34;::" + strings.TrimPrefix(value, "&#34;:::")
+	}
+
+	return value
+}
+
+func (parser *TemplateParser) transNode(key string, message string) string {
+
+	if parser.locale == nil {
+		return message
+	}
+
+	if lcMessage, has := parser.locale.Keys[key]; has && lcMessage != message {
+		return lcMessage
+	}
+
+	if lcMessage, has := parser.locale.Messages[message]; has {
+		return lcMessage
+	}
+
+	return message
+}
+
+func (parser *TemplateParser) transText(content string, keys []string) string {
+
+	matches := dataTokens.FindAllStringSubmatch(content, -1)
+	newContent := content
+	for _, match := range matches {
+		text := strings.TrimSpace(match[1])
+		if strings.HasPrefix(text, "':::") || strings.HasPrefix(text, "\":::") || strings.HasPrefix(text, "&#39;:::") || strings.HasPrefix(text, "&#34;:::") {
+			escaped := parser.escape(text)
+			newContent = strings.Replace(newContent, text, escaped, 1)
+			continue
+		}
+
+		transMatches := transStmtReSingle.FindAllStringSubmatch(text, -1)
+		if len(transMatches) == 0 {
+			transMatches = transStmtReDouble.FindAllStringSubmatch(text, -1)
+		}
+		if len(transMatches) > len(keys) {
+			return content
+		}
+
+		for i, transMatch := range transMatches {
+			message := strings.TrimSpace(transMatch[1])
+
+			if parser.locale == nil {
+				newContent = strings.Replace(newContent, "::"+message, message, 1)
+				continue
+			}
+
+			key := keys[i]
+			if lcMessage, has := parser.locale.Keys[key]; has && lcMessage != message {
+				newContent = strings.Replace(newContent, "::"+message, lcMessage, 1)
+
+				continue
+			}
+
+			if lcMessage, has := parser.locale.Messages[message]; has {
+				newContent = strings.Replace(newContent, "::"+message, lcMessage, 1)
+				continue
+			}
+
+			newContent = strings.Replace(newContent, "::"+message, message, 1)
+		}
+	}
+	return newContent
+}
+
+// Remove the tag and replace it with the children
+func (parser *TemplateParser) removeWrapper(sel *goquery.Selection) {
+	children := sel.Children()
+	if children.Length() == 0 {
+		sel.Remove()
+		return
+	}
+	sel.ReplaceWithSelection(children)
 }
 
 func (parser *TemplateParser) setStatementNode(sel *goquery.Selection) {
@@ -188,8 +513,8 @@ func (parser *TemplateParser) setStatementNode(sel *goquery.Selection) {
 	}
 
 	valueExp := sel.AttrOr("value", "")
-	if stmtRe.MatchString(valueExp) {
-		val, err := parser.data.Exec(valueExp)
+	if dataTokens.MatchString(valueExp) {
+		val, _, err := parser.data.Exec(valueExp)
 		if err != nil {
 			log.Warn("Set %s: %s", valueExp, err)
 			parser.data[name] = valueExp
@@ -202,20 +527,41 @@ func (parser *TemplateParser) setStatementNode(sel *goquery.Selection) {
 	parser.data[name] = valueExp
 }
 
-func (parser *TemplateParser) parseElementAttrs(sel *goquery.Selection) {
+func (parser *TemplateParser) parseElementAttrs(sel *goquery.Selection, force ...bool) {
 	if len(sel.Nodes) < 0 {
 		return
 	}
 
-	if sel.AttrOr("parsed", "false") == "true" {
+	forceParse := false
+	if len(force) > 0 {
+		forceParse = force[0]
+	}
+	if sel.AttrOr("parsed", "false") == "true" && !forceParse {
 		return
 	}
 
 	attrs := sel.Nodes[0].Attr
 	for _, attr := range attrs {
+
+		if strings.HasPrefix(attr.Key, "s:attr-") {
+			parser.sequence = parser.sequence + 1
+			val, _, _ := parser.data.Exec(attr.Val)
+			if v, ok := val.(bool); ok {
+				if v {
+					sel.SetAttr(strings.TrimPrefix(attr.Key, "s:attr-"), "")
+				}
+			}
+			continue
+		}
+
+		// Ignore the s: attributes
+		if strings.HasPrefix(attr.Key, "s:") {
+			continue
+		}
+
 		parser.sequence = parser.sequence + 1
-		res, hasStmt := parser.data.Replace(attr.Val)
-		if hasStmt {
+		res, values := parser.data.Replace(attr.Val)
+		if values != nil && len(values) > 0 {
 			bindings := strings.TrimSpace(attr.Val)
 			key := fmt.Sprintf("%v", parser.sequence)
 			parser.mapping[attr.Key] = Mapping{
@@ -226,6 +572,9 @@ func (parser *TemplateParser) parseElementAttrs(sel *goquery.Selection) {
 			sel.SetAttr(attr.Key, res)
 			bindname := fmt.Sprintf("s:bind:%s", attr.Key)
 			sel.SetAttr(bindname, bindings)
+			if HasJSON(values) {
+				sel.SetAttr(fmt.Sprintf("json-attr-%s", attr.Key), "true")
+			}
 		}
 	}
 }
@@ -243,10 +592,11 @@ func checkIsRawElement(node *html.Node) bool {
 	return false
 }
 func (parser *TemplateParser) parseTextNode(node *html.Node) {
+	parser.transTextNode(node) // Translations
 	parser.sequence = parser.sequence + 1
-	res, hasStmt := parser.data.Replace(node.Data)
+	res, values := parser.data.Replace(node.Data)
 	// Bind the variable to the parent node
-	if node.Parent != nil && hasStmt {
+	if node.Parent != nil && values != nil && len(values) > 0 {
 		bindings := strings.TrimSpace(node.Data)
 		key := fmt.Sprintf("%v", parser.sequence)
 		if bindings != "" {
@@ -261,6 +611,12 @@ func (parser *TemplateParser) parseTextNode(node *html.Node) {
 	}
 	node.Data = res
 }
+func (parser *TemplateParser) hasForStatement(sel *goquery.Selection) bool {
+	if _, exist := sel.Attr("s:for"); exist {
+		return true
+	}
+	return false
+}
 
 func (parser *TemplateParser) forStatementNode(sel *goquery.Selection) {
 
@@ -270,7 +626,7 @@ func (parser *TemplateParser) forStatementNode(sel *goquery.Selection) {
 	parser.hide(sel) // Hide loop node
 
 	forAttr, _ := sel.Attr("s:for")
-	forItems, err := parser.data.Exec(forAttr)
+	forItems, _, err := parser.data.Exec(forAttr)
 	if err != nil {
 		parser.errors = append(parser.errors, err)
 		return
@@ -301,6 +657,24 @@ func (parser *TemplateParser) forStatementNode(sel *goquery.Selection) {
 		parser.data[indexVarName] = idx
 
 		// parser attributes
+		// Copy the if Attr from the parent node
+		if ifAttr, exists := new.Attr("s:if"); exists {
+
+			res, _, err := parser.data.Exec(ifAttr)
+			if err != nil {
+				parser.errors = append(parser.errors, fmt.Errorf("if statement %v error: %v", parser.sequence, err))
+				setError(new, err)
+				parser.show(new)
+				itemNodes = append(itemNodes, new.Nodes...)
+				continue
+			}
+
+			if res == true {
+				parser.hide(new)
+				continue
+			}
+		}
+
 		parser.parseElementAttrs(new)
 		parser.parsed(new)
 
@@ -351,7 +725,7 @@ func (parser *TemplateParser) ifStatementNode(sel *goquery.Selection) {
 	}
 
 	// show the node if the condition is true
-	res, err := parser.data.Exec(ifAttr)
+	res, _, err := parser.data.Exec(ifAttr)
 	if err != nil {
 		parser.errors = append(parser.errors, fmt.Errorf("if statement %v error: %v", parser.sequence, err))
 		return
@@ -368,7 +742,7 @@ func (parser *TemplateParser) ifStatementNode(sel *goquery.Selection) {
 	// else if
 	for _, elifNode := range elifNodes {
 		elifAttr := elifNode.AttrOr("s:elif", "")
-		res, err := parser.data.Exec(elifAttr)
+		res, _, err := parser.data.Exec(elifAttr)
 		if err != nil {
 			parser.errors = append(parser.errors, err)
 			return
@@ -471,30 +845,44 @@ func (parser *TemplateParser) show(sel *goquery.Selection) {
 	// sel.SetAttr("style", style)
 }
 
-func (parser *TemplateParser) tidy(selection *goquery.Selection) {
-	selection.Contents().Each(func(i int, s *goquery.Selection) {
+func (parser *TemplateParser) Tidy(s *goquery.Selection) {
 
-		if s.Nodes[0].Type == html.CommentNode {
-			s.Remove()
+	s.Contents().Each(func(i int, child *goquery.Selection) {
+
+		node := child.Get(0)
+		if _, exist := child.Attr("s:jit"); node.Data == "slot" || exist {
+			parser.Tidy(child)
+			parser.removeWrapper(child)
 			return
 		}
 
-		// Remove the s:key-* attributes
-		if s.Nodes[0].Type == html.ElementNode {
-			for _, attr := range s.Nodes[0].Attr {
-				if attr.Key == "parsed" || keepWords[attr.Key] || strings.HasPrefix(attr.Key, "s:key") || strings.HasPrefix(attr.Key, "s:bind") {
-					s.RemoveAttr(attr.Key)
-				}
-			}
-
-			if s.Nodes[0].Data == "s:set" {
-				s.Remove()
-				return
-			}
+		if node.Data == "s:set" {
+			child.Remove()
+			return
 		}
 
-		parser.tidy(s)
+		if node.Type == html.CommentNode {
+			child.Remove()
+			return
+		}
+
+		// Remove the parsed attribute
+		attrs := []html.Attribute{}
+		for _, attr := range node.Attr {
+			if strings.HasPrefix(attr.Key, "s:") && !keepAttrs[attr.Key] && !strings.HasPrefix(attr.Key, "s:on-") {
+				continue
+			}
+
+			if attr.Key == "parsed" || attr.Key == "is" || strings.HasPrefix(attr.Key, "...") {
+				continue
+			}
+			attrs = append(attrs, attr)
+		}
+
+		node.Attr = attrs
+		parser.Tidy(child)
 	})
+
 }
 
 func (parser *TemplateParser) key(prefix string, sel *goquery.Selection) string {
@@ -521,6 +909,14 @@ func (parser *TemplateParser) hasParsed(sel *goquery.Selection) bool {
 		return true
 	}
 	return false
+}
+
+func (parser *TemplateParser) debug() bool {
+	return parser.option != nil && parser.option.Debug
+}
+
+func (parser *TemplateParser) disableCache() bool {
+	return (parser.option != nil && parser.option.DisableCache) || parser.debug()
 }
 
 func (parser *TemplateParser) toArray(value interface{}) ([]interface{}, error) {
